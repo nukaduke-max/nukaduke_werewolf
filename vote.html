@@ -89,7 +89,6 @@
             const data = snap.val();
             if (!data) return;
 
-            // 投票数チェック
             const players = Object.keys(data.players || {});
             const votes = data.votes || {};
             const voteCount = Object.keys(votes).length;
@@ -98,13 +97,16 @@
                 statusMsg.textContent = `投票済み: ${voteCount} / ${players.length} 人`;
             }
 
-            // 全員投票したら結果画面へ移動させる
-            // (誰か一人が代表してステータスを変える)
+            // ★修正: 全員投票したら「phase: result」だけでなく「status: ended」にする
+            // これでロビーに戻っても「ゲーム中」と判定されなくなります
             if (voteCount === players.length && data.phase !== 'result') {
-                 update(ref(db, `rooms/${ROOM_ID}`), { phase: "result" });
+                 update(ref(db, `rooms/${ROOM_ID}`), { 
+                     phase: "result",
+                     status: "ended" // ←ここを追加！
+                 });
             }
 
-            // フェーズが変わったら移動
+            // 移動
             if (data.phase === 'result') {
                 window.location.href = `result.html?name=${encodeURIComponent(myName)}`;
             }
