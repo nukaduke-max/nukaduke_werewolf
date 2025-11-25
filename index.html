@@ -52,33 +52,40 @@
         let myName = "";
         let currentPlayers = [];
 
+        // ★追加: 設定を復元する
+        loadSettings();
+
         // --- 1. 自動ログイン or 手動ログイン判定 ---
         const params = new URLSearchParams(window.location.search);
         const autoLogin = params.get('auto');
         const urlName = params.get('name');
 
         if (autoLogin && urlName) {
-            // 自動ログイン
             myName = urlName;
-            document.getElementById('username').value = myName; // 見た目用
+            document.getElementById('username').value = myName;
             startLobbyLogic();
         }
 
-        // 手動ログインボタン
         document.getElementById('login-btn').addEventListener('click', () => {
             const name = document.getElementById('username').value.trim();
             if (document.getElementById('password').value !== PASSWORD) return alert("パスワードが違います");
             if (!name) return;
 
             myName = name;
+            // ログイン時にも名前だけ保存しておくと便利
+            localStorage.setItem('werewolf_username', myName);
             startLobbyLogic();
         });
+
+        // 保存された名前があれば入れておく
+        const savedName = localStorage.getItem('werewolf_username');
+        if (savedName) document.getElementById('username').value = savedName;
+
 
         function startLobbyLogic() {
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('lobby-screen').classList.remove('hidden');
 
-            // 参加登録 (毎回上書きしてOK)
             const userRef = ref(db, `rooms/${ROOM_ID}/players/${myName}`);
             update(userRef, { status: "online", role: "undecided" });
             
@@ -86,7 +93,6 @@
         }
 
         function setupLobby() {
-            // プレイヤー監視
             onValue(ref(db, `rooms/${ROOM_ID}/players`), (snap) => {
                 const data = snap.val() || {};
                 currentPlayers = Object.keys(data);
@@ -98,10 +104,8 @@
                 checkReady();
             });
 
-            // ゲーム開始監視
             onValue(ref(db, `rooms/${ROOM_ID}/status`), (snap) => {
                 if (snap.val() === 'playing') {
-                    // 安全策: 役職が決まっているか確認してから飛ぶ
                     const myRoleRef = ref(db, `rooms/${ROOM_ID}/players/${myName}/role`);
                     get(myRoleRef).then((roleSnap) => {
                         const r = roleSnap.val();
@@ -112,6 +116,12 @@
                 }
             });
         }
+
+        // 入力値が変わったらすぐにチェック（＆保存したい場合はここでもsaveSettingsを呼べる）
+        const inputs = document.querySelectorAll('input[type="number"]');
+        inputs.forEach(input => {
+            input.addEventListener('change', checkReady);
+        });
 
         function checkReady() {
             const w = parseInt(document.getElementById('role-werewolf').value) || 0;
@@ -133,6 +143,9 @@
         }
 
         document.getElementById('start-btn').addEventListener('click', () => {
+            // ★追加: ゲーム開始時に設定を保存する
+            saveSettings();
+
             const gameTime = parseInt(document.getElementById('conf-time').value) || 180;
             let deck = [];
             deck = deck.concat(Array(parseInt(document.getElementById('role-werewolf').value)).fill('人狼'));
@@ -153,18 +166,45 @@
                 updates[`players/${player}/role`] = roleName;
                 updates[`players/${player}/original_role`] = roleName;
                 updates[`players/${player}/team`] = teamId;
-                // フラグのリセット
                 updates[`players/${player}/actDone`] = null; 
                 updates[`players/${player}/seenResult`] = null;
             });
 
             updates[`centerCards`] = [deck[deck.length-2], deck[deck.length-1]];
             updates[`gameTime`] = gameTime;
-            updates[`votes`] = null; // 投票リセット
-            updates[`status`] = "playing"; // 開始
+            updates[`votes`] = null;
+            updates[`status`] = "playing"; 
 
             update(ref(db, `rooms/${ROOM_ID}`), updates);
         });
+
+        // --- ★設定保存・読込ロジック ---
+        function saveSettings() {
+            const settings = {
+                time: document.getElementById('conf-time').value,
+                werewolf: document.getElementById('role-werewolf').value,
+                seer: document.getElementById('role-seer').value,
+                thief: document.getElementById('role-thief').value,
+                villager: document.getElementById('role-villager').value
+            };
+            localStorage.setItem('werewolf_settings', JSON.stringify(settings));
+        }
+
+        function loadSettings() {
+            const saved = localStorage.getItem('werewolf_settings');
+            if (saved) {
+                try {
+                    const s = JSON.parse(saved);
+                    if(s.time) document.getElementById('conf-time').value = s.time;
+                    if(s.werewolf) document.getElementById('role-werewolf').value = s.werewolf;
+                    if(s.seer) document.getElementById('role-seer').value = s.seer;
+                    if(s.thief) document.getElementById('role-thief').value = s.thief;
+                    if(s.villager) document.getElementById('role-villager').value = s.villager;
+                } catch(e) {
+                    console.error("設定読み込みエラー", e);
+                }
+            }
+        }
     </script>
 </body>
 </html>
