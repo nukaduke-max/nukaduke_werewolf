@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ワンナイト人狼テスト</title>
+</head>
+<body>
+    <h1>接続テスト</h1>
+    <button id="test-btn" style="font-size: 20px; padding: 20px;">部屋を作るテスト</button>
+
+    <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+      import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
+
+      // あなたのFirebase設定（URL入力済み）
+      const firebaseConfig = {
+        apiKey: "AIzaSyCZZlMXREYtPTFXMTrjtATsa1xShWmZIZI",
+        authDomain: "werewolf-756e4.firebaseapp.com",
+        databaseURL: "https://werewolf-756e4-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "werewolf-756e4",
+        storageBucket: "werewolf-756e4.firebasestorage.app",
+        messagingSenderId: "935198400486",
+        appId: "1:935198400486:web:4ad43bbc49adac97a6c027",
+        measurementId: "G-Q7LBVYBN3Z"
+      };
+
+      // Firebase初期化
+      const app = initializeApp(firebaseConfig);
+      const db = getDatabase(app);
+
+      // ボタンを押した時の処理
+      document.getElementById('test-btn').addEventListener('click', () => {
+        const roomId = "room001";
+        
+        // データを書き込む
+        set(ref(db, 'rooms/' + roomId), {
+          status: "waiting",
+          admin: "スマホ管理者",
+          created_at: new Date().toString()
+        }).then(() => {
+          alert("成功！Firebaseを見てください");
+        }).catch((error) => {
+          alert("失敗: " + error.message);
+        });
+      });
+    </script>
+</body>
+</html>
