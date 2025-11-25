@@ -7,7 +7,6 @@
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #222; color: white; }
         
-        /* 勝者バナー */
         #winner-banner { 
             font-size: 2em; font-weight: bold; padding: 20px; 
             margin: 20px 0; border: 4px solid white; border-radius: 10px;
@@ -23,7 +22,6 @@
         .executed::after { content: " 💀処刑"; color: red; font-weight: bold; text-decoration: none; }
         .team-0 { color: #81C784; } .team-1 { color: #E57373; } .team-2 { color: #FFB74D; }
 
-        /* ロビーへ戻るボタン */
         #back-btn { 
             background: #2196F3; color: white; border: none; 
             padding: 15px 30px; font-size: 18px; border-radius: 50px; 
@@ -53,16 +51,16 @@
         const params = new URLSearchParams(window.location.search);
         const myName = params.get('name');
 
-        // 1. ページを開いたらすぐに「結果を見ました」とサーバーに報告
+        // 1. 「見ました」フラグを立てる
         update(ref(db, `rooms/${ROOM_ID}/players/${myName}`), { seenResult: true });
 
-        // 2. データの取得と表示（getを使うので、後でデータが消えても表示は残る）
+        // 2. 結果計算と表示 (getで一度だけ取得)
         get(ref(db, `rooms/${ROOM_ID}`)).then((snap) => {
             const data = snap.val();
             if (data) calculateResult(data);
         });
 
-        // 3. 全員の「見ました」状況を監視して、最後の人に掃除させる
+        // 3. 全員の閲覧状況監視＆リセット
         onValue(ref(db, `rooms/${ROOM_ID}/players`), (snap) => {
             const players = snap.val() || {};
             const playerList = Object.values(players);
@@ -72,12 +70,8 @@
             document.getElementById('wait-status').textContent = 
                 `結果確認済み: ${seenCount} / ${total} 人`;
 
-            // ★ここがミソ！ 全員が見終わったら、サーバーをきれいに掃除する
+            // ★全員見終わったらサーバーをリセットして次の準備をする
             if (total > 0 && seenCount === total) {
-                // 重複処理を防ぐため、自分が「まだロビーに戻っていない最後の人」なら実行する
-                // （厳密には誰か一人がやればいいので、updateを投げても問題ない）
-                
-                // 次のゲームのためのリセットデータ
                 const updates = {};
                 updates[`status`] = "waiting";     // ロビー待機状態に戻す
                 updates[`phase`] = null;
@@ -85,28 +79,24 @@
                 updates[`votes`] = null;
                 updates[`gameTime`] = null;
                 
-                // プレイヤーの状態もリセット（役職を消して、未定に戻す）
                 Object.keys(players).forEach(pName => {
                     updates[`players/${pName}/role`] = "undecided";
                     updates[`players/${pName}/original_role`] = null;
                     updates[`players/${pName}/team`] = null;
                     updates[`players/${pName}/actDone`] = null;
-                    updates[`players/${pName}/seenResult`] = null; // フラグも消す
+                    updates[`players/${pName}/seenResult`] = null;
                 });
 
-                // 実行！
                 update(ref(db, `rooms/${ROOM_ID}`), updates);
             }
         });
 
-        // --- ロビーに戻るボタン ---
+        // ロビーへ戻るボタン (データは消さずに自分だけ移動)
         document.getElementById('back-btn').addEventListener('click', () => {
-            // ★サーバーのデータは消さずに、自分だけさっさとロビーに移動する
-            // URLに「auto=true」をつけて、ログインをスキップさせる
             window.location.href = `index.html?name=${encodeURIComponent(myName)}&auto=true`;
         });
 
-        // --- 以下、集計ロジック（変更なし） ---
+        // --- 結果計算ロジック ---
         function calculateResult(data) {
             const players = data.players || {};
             const votes = data.votes || {};
