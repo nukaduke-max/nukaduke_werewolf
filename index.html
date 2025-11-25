@@ -3,47 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ワンナイト人狼テスト</title>
+    <title>ワンナイト人狼（プライベート）</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #f9f9f9; }
+        .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        input, button { font-size: 16px; padding: 12px; margin: 8px 0; width: 90%; box-sizing: border-box; }
+        button { background-color: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 5px; }
+        button:hover { opacity: 0.9; }
+        button.reset-btn { background-color: #ff4444; margin-top: 20px; font-size: 14px; }
+        .hidden { display: none; }
+        #player-list { list-style: none; padding: 0; }
+        #player-list li { background: #e8f5e9; margin: 5px 0; padding: 10px; border-radius: 5px; border-bottom: 1px solid #c8e6c9; }
+        .error { color: red; font-weight: bold; }
+    </style>
 </head>
 <body>
-    <h1>接続テスト</h1>
-    <button id="test-btn" style="font-size: 20px; padding: 20px;">部屋を作るテスト</button>
+    <div class="container">
+        <h1>🐺 ワンナイト人狼<br><small>（プライベートルーム）</small></h1>
+
+        <div id="login-screen">
+            <input type="text" id="username" placeholder="名前を入力">
+            <input type="password" id="password" placeholder="合言葉（パスワード）">
+            <button id="login-btn">部屋に入る</button>
+            <p id="error-msg" class="error"></p>
+        </div>
+
+        <div id="game-screen" class="hidden">
+            <h2>参加者リスト</h2>
+            <ul id="player-list">
+                </ul>
+            <p>全員揃ったらゲーム開始！</p>
+            
+            <hr>
+            <button id="reset-btn" class="reset-btn">メンバーをリセット（解散）</button>
+        </div>
+    </div>
 
     <script type="module">
-      import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-      import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue, remove, onDisconnect } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
 
-      // あなたのFirebase設定（URL入力済み）
-      const firebaseConfig = {
-        apiKey: "AIzaSyCZZlMXREYtPTFXMTrjtATsa1xShWmZIZI",
-        authDomain: "werewolf-756e4.firebaseapp.com",
-        databaseURL: "https://werewolf-756e4-default-rtdb.asia-southeast1.firebasedatabase.app",
-        projectId: "werewolf-756e4",
-        storageBucket: "werewolf-756e4.firebasestorage.app",
-        messagingSenderId: "935198400486",
-        appId: "1:935198400486:web:4ad43bbc49adac97a6c027",
-        measurementId: "G-Q7LBVYBN3Z"
-      };
+        // ★設定1: 友達と決めたパスワードに書き換えてください
+        const PASSWORD = "2216";
 
-      // Firebase初期化
-      const app = initializeApp(firebaseConfig);
-      const db = getDatabase(app);
+        // ★設定2: 部屋の名前（固定）
+        const ROOM_ID = "my_private_room";
 
-      // ボタンを押した時の処理
-      document.getElementById('test-btn').addEventListener('click', () => {
-        const roomId = "room001";
-        
-        // データを書き込む
-        set(ref(db, 'rooms/' + roomId), {
-          status: "waiting",
-          admin: "スマホ管理者",
-          created_at: new Date().toString()
-        }).then(() => {
-          alert("成功！Firebaseを見てください");
-        }).catch((error) => {
-          alert("失敗: " + error.message);
+        // Firebase設定（あなたのもの）
+        const firebaseConfig = {
+            apiKey: "AIzaSyCZZlMXREYtPTFXMTrjtATsa1xShWmZIZI",
+            authDomain: "werewolf-756e4.firebaseapp.com",
+            databaseURL: "https://werewolf-756e4-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "werewolf-756e4",
+            storageBucket: "werewolf-756e4.firebasestorage.app",
+            messagingSenderId: "935198400486",
+            appId: "1:935198400486:web:4ad43bbc49adac97a6c027",
+            measurementId: "G-Q7LBVYBN3Z"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // 要素の取得
+        const loginScreen = document.getElementById('login-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const errorMsg = document.getElementById('error-msg');
+
+        // --- ログイン処理 ---
+        document.getElementById('login-btn').addEventListener('click', () => {
+            const name = document.getElementById('username').value;
+            const inputPass = document.getElementById('password').value;
+
+            // バリデーション
+            if (!name) {
+                errorMsg.textContent = "名前を入れてください";
+                return;
+            }
+            if (inputPass !== PASSWORD) {
+                errorMsg.textContent = "パスワードが違います";
+                return;
+            }
+
+            // ログイン成功！画面切り替え
+            errorMsg.textContent = "";
+            joinRoom(name);
         });
-      });
+
+        // --- 部屋に参加する処理 ---
+        function joinRoom(name) {
+            loginScreen.classList.add('hidden');
+            gameScreen.classList.remove('hidden');
+
+            // 1. Firebaseに自分の名前を書き込む
+            const myRef = ref(db, `rooms/${ROOM_ID}/players/${name}`);
+            set(myRef, {
+                role: "undecided",
+                status: "online"
+            });
+
+            // 【重要】ブラウザを閉じたら自動で消えるようにする設定
+            onDisconnect(myRef).remove();
+
+            // 2. 部屋の状況をリアルタイム監視する
+            const playersRef = ref(db, `rooms/${ROOM_ID}/players`);
+            onValue(playersRef, (snapshot) => {
+                const listElement = document.getElementById('player-list');
+                listElement.innerHTML = ""; // リセット
+
+                const data = snapshot.val();
+                if (data) {
+                    // データがある場合、リストを表示
+                    Object.keys(data).forEach((playerName) => {
+                        const li = document.createElement('li');
+                        li.textContent = playerName + (playerName === name ? " (自分)" : "");
+                        listElement.appendChild(li);
+                    });
+                } else {
+                    // 誰もいない場合
+                    listElement.innerHTML = "<li>まだ誰もいません</li>";
+                }
+            });
+        }
+
+        // --- リセット処理（全員を退出させる） ---
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            if(confirm("本当に全員のデータを消してリセットしますか？")) {
+                remove(ref(db, `rooms/${ROOM_ID}/players`));
+            }
+        });
     </script>
 </body>
 </html>
