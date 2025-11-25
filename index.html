@@ -22,21 +22,24 @@
 
                 /* --- PC・タブレット向けの調整 --- */
         /* 画面幅が768px以上（スマホ以外）の時だけ適用されます */
+                /* --- PC・タブレット向けの調整 --- */
         @media (min-width: 768px) {
-            body { 
-                font-size: 24px; /* 基本の文字を大きく */
-            }
+            body { font-size: 24px; }
+            
+            /* 全体のボタンや入力欄を大きく */
             input, button, select { 
-                font-size: 24px !important; /* 入力欄やボタンも大きく */
-                padding: 15px; /* 余白もたっぷりと */
+                font-size: 24px !important; 
+                padding: 15px; 
             }
-            .container, .card, .area-box { 
-                max-width: 800px; /* 枠の幅を少し広げる */
+
+            /* ★追加修正: 役職設定の数字欄だけは、幅を広げて余白を調整する */
+            .setting-row input {
+                width: 120px !important; /* 50pxだと狭すぎるので広げる */
+                padding: 5px 10px !important; /* 上下の余白を少し減らす */
+                text-align: center;
             }
-            #winner-banner {
-                font-size: 3em; /* 結果画面のバナーをさらに巨大に */
-            }
-            /* タイトルなども大きく */
+
+            .container, .card, .area-box { max-width: 800px; }
             h1 { font-size: 3em; }
             h2 { font-size: 2.5em; }
         }
