@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>結果発表</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #222; color: white; }
+        
+        /* 勝者表示 */
+        #winner-banner { 
+            font-size: 2em; font-weight: bold; padding: 20px; 
+            margin: 20px 0; border: 4px solid white; border-radius: 10px;
+            background: #444; color: white;
+        }
+        .win-villager { background-color: #4CAF50 !important; color: white; border-color: #81C784 !important; }
+        .win-werewolf { background-color: #F44336 !important; color: white; border-color: #E57373 !important; }
+        .win-tanner { background-color: #FF9800 !important; color: white; border-color: #FFB74D !important; }
+
+        /* リスト */
+        .section-title { margin-top: 30px; border-bottom: 1px solid #555; padding-bottom: 5px; color: #aaa; }
+        ul { list-style: none; padding: 0; }
+        li { padding: 10px; border-bottom: 1px solid #444; }
+        
+        .role-reveal { font-weight: bold; font-size: 1.2em; }
+        .team-0 { color: #81C784; } /* 村人 */
+        .team-1 { color: #E57373; } /* 人狼 */
+        .team-2 { color: #FFB74D; } /* 吊り人 */
+        
+        .executed { text-decoration: line-through; color: #888; }
+        .executed::after { content: " 💀処刑"; color: red; font-weight: bold; text-decoration: none; }
+
+        /* 次へボタン */
+        #reset-btn { 
+            background: #2196F3; color: white; border: none; 
+            padding: 15px 30px; font-size: 18px; border-radius: 50px; 
+            margin-top: 30px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🏆 結果発表</h1>
+
+    <div id="winner-banner">集計中...</div>
+    <p id="execution-msg"></p>
+
+    <h3 class="section-title">🎭 正体と結果</h3>
+    <ul id="player-result-list"></ul>
+
+    <h3 class="section-title">🗳 投票の内訳</h3>
+    <ul id="vote-detail-list"></ul>
+
+    <button id="reset-btn">ロビーに戻る</button>
+
+    <script type="module">
+        import { db, ref, get, update, remove, ROOM_ID } from './config.js';
+
+        // ページを開いたら一度だけ計算・表示する
+        get(ref(db, `rooms/${ROOM_ID}`)).then((snap) => {
+            const data = snap.val();
+            if (data) {
+                calculateResult(data);
+            }
+        });
+
+        function calculateResult(data) {
+            const players = data.players || {};
+            const votes = data.votes || {};
+            const playerList = Object.keys(players);
+
+            // 1. 票を集計する
+            const voteCounts = {};
+            playerList.forEach(p => voteCounts[p] = 0);
+            voteCounts["NO_EXECUTION"] = 0; // 平和村投票用
+
+            // 誰が誰に入れたかのリスト作成
+            const voteDetails = [];
+            Object.keys(votes).forEach(voter => {
+                const target = votes[voter];
+                if (target === "NO_EXECUTION") {
+                    voteCounts["NO_EXECUTION"]++;
+                    voteDetails.push(`${voter} ➔ (投票なし)`);
+                } else {
+                    if (voteCounts[target] !== undefined) voteCounts[target]++;
+                    voteDetails.push(`${voter} ➔ ${target}`);
+                }
+            });
+
+            // 2. 処刑者を決定する
+            // ルール: 最多得票者が処刑。ただし最多票が1票以下の場合は「処刑なし」
+            let maxVotes = 0;
+            Object.keys(voteCounts).forEach(key => {
+                if (key !== "NO_EXECUTION" && voteCounts[key] > maxVotes) {
+                    maxVotes = voteCounts[key];
+                }
+            });
+
+            let executedPlayers = [];
+            if (maxVotes > 1) {
+                executedPlayers = playerList.filter(p => voteCounts[p] === maxVotes);
+            }
+
+            // 3. 勝利判定
+            // teamID: 0=村人, 1=人狼, 2=吊り人
+            let winnerTeam = ""; // "villager", "werewolf", "tanner"
+            let winMsg = "";
+
+            // A. 吊り人チェック
+            const tannerExecuted = executedPlayers.some(p => players[p].team === 2);
+            if (tannerExecuted) {
+                winnerTeam = "tanner";
+                winMsg = "👻 吊り人の勝利！";
+            } else {
+                // B. 人狼処刑チェック
+                const werewolfExecuted = executedPlayers.some(p => players[p].team === 1);
+                
+                // 場に人狼がいるか？
+                const werewolfExists = playerList.some(p => players[p].team === 1);
+
+                if (werewolfExecuted) {
+                    winnerTeam = "villager";
+                    winMsg = "🎉 村人チームの勝利！ (人狼を処刑しました)";
+                } else {
+                    if (executedPlayers.length === 0) {
+                        // 誰も処刑されなかった場合
+                        if (!werewolfExists) {
+                            winnerTeam = "villager";
+                            winMsg = "🎉 村人チームの勝利！ (平和村成功)";
+                        } else {
+                            winnerTeam = "werewolf";
+                            winMsg = "🐺 人狼チームの勝利... (誰も処刑されませんでした)";
+                        }
+                    } else {
+                        // 誰か処刑されたが、それは人狼ではなかった
+                        if (!werewolfExists) {
+                            winnerTeam = "werewolf"; // 村人しかいないのに村人を吊った＝敗北扱い
+                            winMsg = "💀 敗北... (平和村なのに処刑してしまいました)";
+                        } else {
+                            winnerTeam = "werewolf";
+                            winMsg = "🐺 人狼チームの勝利！";
+                        }
+                    }
+                }
+            }
+
+            displayScreen(winnerTeam, winMsg, executedPlayers, players, voteDetails);
+        }
+
+        function displayScreen(team, msg, executed, players, voteDetails) {
+            // バナー表示
+            const banner = document.getElementById('winner-banner');
+            banner.textContent = msg;
+            if (team === "villager") banner.className = "win-villager";
+            if (team === "werewolf") banner.className = "win-werewolf";
+            if (team === "tanner") banner.className = "win-tanner";
+
+            // 処刑メッセージ
+            const execMsg = document.getElementById('execution-msg');
+            if (executed.length > 0) {
+                execMsg.innerHTML = `処刑されたのは <b>${executed.join("さん, ")}さん</b> でした。`;
+            } else {
+                execMsg.textContent = "処刑された人はいませんでした。";
+            }
+
+            // プレイヤーリスト表示
+            const pList = document.getElementById('player-result-list');
+            Object.keys(players).forEach(name => {
+                const p = players[name];
+                const li = document.createElement('li');
+                
+                // 名前と役職
+                let html = `<span style="font-size:1.1em;">${name}</span>: `;
+                html += `<span class="role-reveal team-${p.team}">${p.role}</span>`;
+                
+                // 処刑マーク
+                if (executed.includes(name)) {
+                    li.className = "executed";
+                }
+                
+                li.innerHTML = html;
+                pList.appendChild(li);
+            });
+
+            // 投票詳細
+            const vList = document.getElementById('vote-detail-list');
+            voteDetails.forEach(detail => {
+                const li = document.createElement('li');
+                li.textContent = detail;
+                vList.appendChild(li);
+            });
+        }
+
+        // --- 次のゲームへ（ロビーに戻る） ---
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            if(!confirm("ロビーに戻りますか？")) return;
+
+            // 部屋の状態を初期化する
+            const updates = {};
+            updates[`phase`] = null; // フェーズリセット
+            updates[`endTime`] = null;
+            updates[`votes`] = null; // 投票リセット
+            updates[`gameTime`] = null;
+            updates[`status`] = "waiting"; // ロビー待機状態へ
+
+            // プレイヤーごとの状態もリセット
+            // ※全員分やるのは大変なので、とりあえず部屋のstatusを変えて、
+            // 各自がロビーに戻った時に上書きされる仕組みに任せるか、ここで消すか。
+            // ここでは簡易的に「投票とフェーズ」だけ消して、index.htmlに戻します。
+
+            update(ref(db, `rooms/${ROOM_ID}`), updates).then(() => {
+                window.location.href = "index.html";
+            });
+        });
+        
+        // 他の人がリセットした場合も自動で戻るようにする
+        import { onValue } from './config.js';
+        onValue(ref(db, `rooms/${ROOM_ID}/status`), (snap) => {
+            if (snap.val() === "waiting") {
+                window.location.href = "index.html";
+            }
+        });
+
+    </script>
+</body>
+</html>
