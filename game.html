@@ -28,7 +28,7 @@
         .chat-msg { margin-bottom: 4px; border-bottom: 1px dotted #ccc; font-size: 14px; }
         .chat-name { font-weight: bold; color: #444; }
         
-        /* ★修正: 入力欄のズーム防止のためフォントサイズを16px確保 */
+        /* 入力欄のズーム防止 */
         .chat-input-row { display: flex; gap: 5px; }
         #chat-input { flex: 1; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
         #chat-send { width: 70px; margin: 0; }
@@ -53,7 +53,7 @@
             <div id="wait-area" class="area-box">
                 <p id="wait-msg">アクションが終わったらボタンを押してください</p>
                 <button id="finish-btn" class="finish-btn">確認・行動完了</button>
-                </div>
+            </div>
         </div>
 
         <div id="discussion-phase" class="hidden">
@@ -100,7 +100,7 @@
             }
         });
 
-        // 部屋全体の監視
+        // ★部屋全体の監視 (フェーズ移行ロジック)
         onValue(ref(db, `rooms/${ROOM_ID}`), (snap) => {
             const roomData = snap.val();
             if (!roomData) return;
@@ -112,10 +112,7 @@
                 const total = playerList.length;
                 const doneCount = playerList.filter(p => p.actDone).length;
                 
-                // ★修正: 人数表示の行を削除しました
-                // document.getElementById('ready-count').textContent = ... 
-
-                // 全員完了チェック
+                // 全員完了チェック -> 議論へ
                 if (doneCount === total && total > 0 && !roomData.endTime) {
                     const gameTime = roomData.gameTime || 180;
                     const endTime = Date.now() + (gameTime * 1000);
@@ -131,6 +128,11 @@
             if (roomData.phase === 'discussion' && roomData.endTime) {
                 startDiscussion(roomData.endTime);
             }
+
+            // ★追加: 投票フェーズへの移動
+            if (roomData.phase === 'voting') {
+                window.location.href = `vote.html?name=${encodeURIComponent(myName)}`;
+            }
         });
 
         // --- チャット機能 ---
@@ -145,7 +147,6 @@
         });
 
         document.getElementById('chat-send').addEventListener('click', sendChat);
-        // エンターキーでも送信可能に
         document.getElementById('chat-input').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendChat();
         });
@@ -161,7 +162,7 @@
                 timestamp: Date.now()
             });
             input.value = "";
-            input.focus(); // 送信後も入力を続けやすくする
+            input.focus(); 
         }
 
 
@@ -271,7 +272,7 @@
             document.getElementById('action-desc').textContent = "完了。下のボタンを押してください。";
         }
 
-        // --- 4. 議論タイマー ---
+        // --- 4. 議論タイマー (修正版) ---
         function startDiscussion(endTime) {
             document.getElementById('night-phase').classList.add('hidden');
             document.getElementById('discussion-phase').classList.remove('hidden');
@@ -286,11 +287,14 @@
                 const s = (remain % 60).toString().padStart(2, '0');
                 document.getElementById('timer-display').textContent = `${m}:${s}`;
 
+                // ★0秒になったら投票フェーズへ移行
                 if (remain <= 0) {
                     clearInterval(timerInterval);
                     document.getElementById('timer-display').style.color = "red";
-                    document.getElementById('timer-display').textContent = "投票へ！";
-                    // 投票ページへ移動（次回）
+                    document.getElementById('timer-display').textContent = "投票へ移動中...";
+                    
+                    // サーバーの状態を更新 (誰か1人が実行すればOK)
+                    update(ref(db, `rooms/${ROOM_ID}`), { phase: "voting" });
                 }
             }, 1000);
         }
