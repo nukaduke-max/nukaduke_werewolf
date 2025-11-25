@@ -10,11 +10,12 @@
         input, button { font-size: 16px; padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
         button { background-color: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 5px; }
         .hidden { display: none; }
+        .setting-row { margin: 5px 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🐺 ロビー</h1>
+        <h1>🐺 ロビー (v3)</h1>
 
         <div id="login-screen">
             <input type="text" id="username" placeholder="名前 (例: ポチ)">
@@ -27,10 +28,18 @@
             <ul id="player-list" style="text-align:left;"></ul>
             <hr>
             <h3>ゲーム設定</h3>
-            <div>🐺人狼 <input type="number" id="role-werewolf" value="2" style="width:50px;"></div>
-            <div>🔮占い <input type="number" id="role-seer" value="1" style="width:50px;"></div>
-            <div>🐱怪盗 <input type="number" id="role-thief" value="1" style="width:50px;"></div>
-            <div>👱村人 <input type="number" id="role-villager" value="0" style="width:50px;"></div>
+            
+            <div class="setting-row">
+                <label>⏱ 議論時間 (秒)</label>
+                <input type="number" id="conf-time" value="180" style="width:80px;">
+            </div>
+
+            <hr>
+            <div class="setting-row">🐺人狼 <input type="number" id="role-werewolf" value="2" style="width:50px;"></div>
+            <div class="setting-row">🔮占い <input type="number" id="role-seer" value="1" style="width:50px;"></div>
+            <div class="setting-row">🐱怪盗 <input type="number" id="role-thief" value="1" style="width:50px;"></div>
+            <div class="setting-row">👱村人 <input type="number" id="role-villager" value="0" style="width:50px;"></div>
+            
             <p id="status-msg">準備中...</p>
             
             <button id="start-btn" disabled>ゲーム開始！</button>
@@ -38,8 +47,7 @@
     </div>
 
     <script type="module">
-        // ★さっき作ったconfig.jsから機能を読み込む（便利！）
-        import { db, ref, set, update, onValue, remove, onDisconnect, ROOM_ID, PASSWORD } from './config.js';
+        import { db, ref, set, update, onValue, get, remove, onDisconnect, ROOM_ID, PASSWORD } from './config.js';
 
         let myName = "";
         let currentPlayers = [];
@@ -57,8 +65,7 @@
             // 参加登録
             const userRef = ref(db, `rooms/${ROOM_ID}/players/${myName}`);
             set(userRef, { status: "online", role: "undecided" });
-            //onDisconnect(userRef).remove();
-
+            
             setupLobby();
         });
 
@@ -75,27 +82,32 @@
                 checkReady();
             });
 
-            // 2. ゲーム開始監視（★ここがポイント）
-            // 管理者が開始ボタンを押すと status が 'playing' になります。
-            // すると、参加者全員が自動的に game.html に飛ばされます。
+            // 2. ゲーム開始監視（★修正済みの安全版）
             onValue(ref(db, `rooms/${ROOM_ID}/status`), (snap) => {
                 if (snap.val() === 'playing') {
-                    // 名前を持って次のページへ移動
-                    window.location.href = `game.html?name=${encodeURIComponent(myName)}`;
+                    // ★安全策: 自分の役職が決まっているか確認してから飛ぶ
+                    const myRoleRef = ref(db, `rooms/${ROOM_ID}/players/${myName}/role`);
+                    get(myRoleRef).then((roleSnap) => {
+                        const r = roleSnap.val();
+                        if (r && r !== "undecided") {
+                            window.location.href = `game.html?name=${encodeURIComponent(myName)}`;
+                        } else {
+                            console.log("前のゲームのステータスが残っています。開始ボタンが押されるまで待ちます。");
+                        }
+                    });
                 }
             });
         }
 
         // 準備OKかチェック
         function checkReady() {
-            const w = parseInt(document.getElementById('role-werewolf').value);
-            const s = parseInt(document.getElementById('role-seer').value);
-            const t = parseInt(document.getElementById('role-thief').value);
-            const v = parseInt(document.getElementById('role-villager').value);
+            const w = parseInt(document.getElementById('role-werewolf').value) || 0;
+            const s = parseInt(document.getElementById('role-seer').value) || 0;
+            const t = parseInt(document.getElementById('role-thief').value) || 0;
+            const v = parseInt(document.getElementById('role-villager').value) || 0;
             const total = w + s + t + v;
             
             const btn = document.getElementById('start-btn');
-            // 人数 + 2枚のカードが必要
             if (currentPlayers.length > 0 && total === currentPlayers.length + 2) {
                 document.getElementById('status-msg').textContent = "準備OK!";
                 btn.disabled = false;
@@ -107,41 +119,45 @@
             }
         }
 
-            // ゲーム開始ボタンの処理（修正版）
+        // ゲーム開始ボタンの処理
         document.getElementById('start-btn').addEventListener('click', () => {
-            // 1. デッキ作成
+            // 1. 設定値の取得
+            const gameTime = parseInt(document.getElementById('conf-time').value) || 180;
+
+            // 2. デッキ作成
             let deck = [];
             deck = deck.concat(Array(parseInt(document.getElementById('role-werewolf').value)).fill('人狼'));
             deck = deck.concat(Array(parseInt(document.getElementById('role-seer').value)).fill('占い師'));
             deck = deck.concat(Array(parseInt(document.getElementById('role-thief').value)).fill('怪盗'));
             deck = deck.concat(Array(parseInt(document.getElementById('role-villager').value)).fill('村人'));
-            // 必要ならここに吊り人なども追加
 
-            // 2. シャッフル
+            // 3. シャッフル
             for (let i = deck.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [deck[i], deck[j]] = [deck[j], deck[i]];
             }
 
-            // 3. プレイヤーに配る（データ構造を強化！）
+            // 4. 配布データの作成
             const updates = {};
             currentPlayers.forEach((player, index) => {
                 const roleName = deck[index];
                 
-                // 陣営判定（0:村人側, 1:人狼側, 2:吊り人）
+                // 陣営判定（0:村人側, 1:人狼側）
                 let teamId = 0;
                 if (roleName === '人狼') teamId = 1;
-                // if (roleName === '吊り人') teamId = 2; // 実装するならここ
 
-                updates[`players/${player}/role`] = roleName;          // 表示用（後で変わるかも）
-                updates[`players/${player}/original_role`] = roleName; // 占い用（絶対変わらない）
-                updates[`players/${player}/team`] = teamId;            // 勝敗判定用
+                updates[`players/${player}/role`] = roleName;
+                updates[`players/${player}/original_role`] = roleName;
+                updates[`players/${player}/team`] = teamId;
             });
 
-            // 4. 中央カード保存
+            // 中央カード
             updates[`centerCards`] = [deck[deck.length-2], deck[deck.length-1]];
             
-            // 5. ステータス変更
+            // ★時間を保存
+            updates[`gameTime`] = gameTime;
+
+            // ステータス変更
             updates[`status`] = "playing";
 
             update(ref(db, `rooms/${ROOM_ID}`), updates);
