@@ -235,6 +235,7 @@
             updates[`centerCards`] = [deck[deck.length-2], deck[deck.length-1]];
             updates[`gameTime`] = gameTime;
             updates[`votes`] = null;
+            updates[`chat`] = null;
             updates[`status`] = "playing"; 
 
             update(ref(db, `rooms/${ROOM_ID}`), updates);
