@@ -8,23 +8,15 @@
         body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #222; color: white; }
         h1 { color: #ff5252; margin-bottom: 10px; }
         p { color: #ccc; }
-
-        /* 投票ボタンリスト */
         #vote-list { list-style: none; padding: 0; max-width: 400px; margin: 20px auto; }
         .vote-btn { 
             display: block; width: 100%; padding: 15px; margin: 10px 0; 
             font-size: 18px; background: #2196F3; color: white; 
             border: none; border-radius: 8px; cursor: pointer; 
-            transition: background 0.2s;
         }
         .vote-btn:active { background: #1976D2; transform: scale(0.98); }
-        
-        /* 投票済み状態 */
         .disabled { background: #555 !important; cursor: not-allowed; opacity: 0.6; }
-        
-        /* 放棄ボタン */
         .abandon-btn { background: #777; margin-top: 30px; font-size: 14px; padding: 10px; }
-        
         #status-msg { margin-top: 20px; font-weight: bold; color: yellow; }
     </style>
 </head>
@@ -48,13 +40,13 @@
 
         const statusMsg = document.getElementById('status-msg');
 
-        // 1. プレイヤーリストを取得してボタンを作る
+        // 1. プレイヤーリスト取得
         get(ref(db, `rooms/${ROOM_ID}/players`)).then((snap) => {
             const players = snap.val();
             const list = document.getElementById('vote-list');
 
             Object.keys(players).forEach(pName => {
-                if (pName === myName) return; // 自分は除外
+                if (pName === myName) return; 
 
                 const btn = document.createElement('button');
                 btn.className = 'vote-btn';
@@ -64,18 +56,14 @@
             });
         });
 
-        // 2. 放棄ボタン（平和村狙いなど）
         document.getElementById('abandon-btn').addEventListener('click', () => {
              castVote("NO_EXECUTION");
         });
 
-        // 3. 投票処理
         function castVote(target) {
             if(!confirm(target === "NO_EXECUTION" ? "誰も吊りませんか？" : `${target}さんに投票しますか？`)) return;
 
-            // 投票データを保存: votes/自分の名前 = 投票先
             set(ref(db, `rooms/${ROOM_ID}/votes/${myName}`), target).then(() => {
-                // UIをロック
                 document.querySelectorAll('.vote-btn').forEach(b => {
                     b.disabled = true;
                     b.classList.add('disabled');
@@ -84,7 +72,7 @@
             });
         }
 
-        // 4. 全員の投票状況を監視
+        // 2. 全員の投票監視
         onValue(ref(db, `rooms/${ROOM_ID}`), (snap) => {
             const data = snap.val();
             if (!data) return;
@@ -97,16 +85,15 @@
                 statusMsg.textContent = `投票済み: ${voteCount} / ${players.length} 人`;
             }
 
-            // ★修正: 全員投票したら「phase: result」だけでなく「status: ended」にする
-            // これでロビーに戻っても「ゲーム中」と判定されなくなります
+            // 全員投票したら次へ
             if (voteCount === players.length && data.phase !== 'result') {
+                 // ★重要: statusをendedにすることで、ロビーに戻った時の誤作動を防ぐ
                  update(ref(db, `rooms/${ROOM_ID}`), { 
                      phase: "result",
-                     status: "ended" // ←ここを追加！
+                     status: "ended"
                  });
             }
 
-            // 移動
             if (data.phase === 'result') {
                 window.location.href = `result.html?name=${encodeURIComponent(myName)}`;
             }
