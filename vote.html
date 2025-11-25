@@ -18,6 +18,29 @@
         .disabled { background: #555 !important; cursor: not-allowed; opacity: 0.6; }
         .abandon-btn { background: #777; margin-top: 30px; font-size: 14px; padding: 10px; }
         #status-msg { margin-top: 20px; font-weight: bold; color: yellow; }
+
+                /* --- PC・タブレット向けの調整 --- */
+        /* 画面幅が768px以上（スマホ以外）の時だけ適用されます */
+        @media (min-width: 768px) {
+            body { 
+                font-size: 24px; /* 基本の文字を大きく */
+            }
+            input, button, select { 
+                font-size: 24px !important; /* 入力欄やボタンも大きく */
+                padding: 15px; /* 余白もたっぷりと */
+            }
+            .container, .card, .area-box { 
+                max-width: 800px; /* 枠の幅を少し広げる */
+            }
+            #winner-banner {
+                font-size: 3em; /* 結果画面のバナーをさらに巨大に */
+            }
+            /* タイトルなども大きく */
+            h1 { font-size: 3em; }
+            h2 { font-size: 2.5em; }
+        }
+
+        
     </style>
 </head>
 <body>
