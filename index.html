@@ -107,31 +107,41 @@
             }
         }
 
-        // ゲーム開始ボタン（ここですごい処理をします）
+            // ゲーム開始ボタンの処理（修正版）
         document.getElementById('start-btn').addEventListener('click', () => {
-            // 1. 役職カードの山を作る
+            // 1. デッキ作成
             let deck = [];
             deck = deck.concat(Array(parseInt(document.getElementById('role-werewolf').value)).fill('人狼'));
             deck = deck.concat(Array(parseInt(document.getElementById('role-seer').value)).fill('占い師'));
             deck = deck.concat(Array(parseInt(document.getElementById('role-thief').value)).fill('怪盗'));
             deck = deck.concat(Array(parseInt(document.getElementById('role-villager').value)).fill('村人'));
+            // 必要ならここに吊り人なども追加
 
-            // 2. シャッフル（ランダムに混ぜる）
+            // 2. シャッフル
             for (let i = deck.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [deck[i], deck[j]] = [deck[j], deck[i]];
             }
 
-            // 3. プレイヤーに配る
+            // 3. プレイヤーに配る（データ構造を強化！）
             const updates = {};
             currentPlayers.forEach((player, index) => {
-                updates[`players/${player}/role`] = deck[index];
+                const roleName = deck[index];
+                
+                // 陣営判定（0:村人側, 1:人狼側, 2:吊り人）
+                let teamId = 0;
+                if (roleName === '人狼') teamId = 1;
+                // if (roleName === '吊り人') teamId = 2; // 実装するならここ
+
+                updates[`players/${player}/role`] = roleName;          // 表示用（後で変わるかも）
+                updates[`players/${player}/original_role`] = roleName; // 占い用（絶対変わらない）
+                updates[`players/${player}/team`] = teamId;            // 勝敗判定用
             });
 
-            // 4. 余った2枚を「中央のカード」として保存
+            // 4. 中央カード保存
             updates[`centerCards`] = [deck[deck.length-2], deck[deck.length-1]];
             
-            // 5. ステータスを「プレイ中」に変更（これで全員ジャンプ！）
+            // 5. ステータス変更
             updates[`status`] = "playing";
 
             update(ref(db, `rooms/${ROOM_ID}`), updates);
