@@ -9,23 +9,51 @@
 <body>
     <h1>🎮 ゲーム開始！</h1>
     <h2 id="welcome-msg"></h2>
-    <p>あなたの役職を確認しています...</p>
-    <h1 id="my-role" style="font-size:3em; color:red;">???</h1>
+    
+    <div id="status-area">
+        <p>あなたの役職を確認しています...</p>
+    </div>
+
+    <h1 id="my-role" style="font-size:3em; color:red; font-weight:bold;">???</h1>
+
+    <p id="debug-log" style="color:gray; font-size:0.8em; margin-top:50px;"></p>
 
     <script type="module">
-        import { db, ref, get, ROOM_ID } from './config.js';
+        // config.js から必要な道具を読み込む
+        import { db, ref, onValue, ROOM_ID } from './config.js';
 
         // URLから自分の名前を取り出す
         const params = new URLSearchParams(window.location.search);
         const myName = params.get('name');
 
-        document.getElementById('welcome-msg').textContent = `${myName}さん、ようこそ`;
+        const logArea = document.getElementById('debug-log');
+        const roleArea = document.getElementById('my-role');
 
-        if(myName) {
-            // Firebaseから自分の役職を見に行く
-            get(ref(db, `rooms/${ROOM_ID}/players/${myName}/role`)).then((snap) => {
-                const role = snap.val();
-                document.getElementById('my-role').textContent = role;
+        if (!myName) {
+            document.getElementById('welcome-msg').textContent = "エラー: 名前が不明です";
+        } else {
+            document.getElementById('welcome-msg').textContent = `${myName}さん`;
+            logArea.textContent = "データを待機中...";
+
+            // ★ここを修正: get ではなく onValue で確実にデータを待ち伏せする
+            const myDataRef = ref(db, `rooms/${ROOM_ID}/players/${myName}`);
+            
+            onValue(myDataRef, (snapshot) => {
+                const data = snapshot.val();
+                
+                if (data && data.role) {
+                    // 役職データが見つかった場合
+                    roleArea.textContent = data.role;
+                    document.getElementById('status-area').innerHTML = "<p>あなたの役職は...</p>";
+                    logArea.textContent = "データ受信成功";
+                } else {
+                    // データはあるけど役職が入っていない、またはデータがない場合
+                    logArea.textContent = "まだ役職データが届いていません (Retrying...)";
+                }
+            }, (error) => {
+                // エラーが起きた場合
+                roleArea.textContent = "エラー";
+                logArea.textContent = "通信エラー: " + error.message;
             });
         }
     </script>
