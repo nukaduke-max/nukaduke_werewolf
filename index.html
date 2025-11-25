@@ -57,7 +57,7 @@
             // 参加登録
             const userRef = ref(db, `rooms/${ROOM_ID}/players/${myName}`);
             set(userRef, { status: "online", role: "undecided" });
-            onDisconnect(userRef).remove();
+            //onDisconnect(userRef).remove();
 
             setupLobby();
         });
