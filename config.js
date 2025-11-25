@@ -22,6 +22,6 @@ const db = getDatabase(app);
 
 // 定数もここで管理
 const ROOM_ID = "my_private_room";
-const PASSWORD = "1234";
+const PASSWORD = "2216";
 
 export { db, ref, set, get, update, onValue, push, onChildAdded, remove, onDisconnect, child, ROOM_ID, PASSWORD };
