@@ -3,53 +3,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ワンナイト人狼（プライベート）</title>
+    <title>ワンナイト人狼（ロビー機能付き）</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #f9f9f9; }
-        .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        input, button { font-size: 16px; padding: 12px; margin: 8px 0; width: 90%; box-sizing: border-box; }
-        button { background-color: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 5px; }
-        button:hover { opacity: 0.9; }
-        button.reset-btn { background-color: #ff4444; margin-top: 20px; font-size: 14px; }
+        body { font-family: sans-serif; text-align: center; padding: 10px; background-color: #f4f4f4; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        
+        /* 共通パーツ */
+        input, button, select { font-size: 16px; padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+        button { background-color: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 5px; font-weight: bold; }
+        button.secondary { background-color: #777; }
+        button.danger { background-color: #ff4444; margin-top: 20px; }
         .hidden { display: none; }
+        
+        /* エリアごとのスタイル */
+        .section { border: 1px solid #ddd; padding: 10px; margin-bottom: 15px; border-radius: 5px; background: #fafafa; }
+        .section h3 { margin-top: 0; font-size: 1.1em; border-bottom: 2px solid #ddd; padding-bottom: 5px; }
+
+        /* チャット */
+        #chat-history { height: 150px; overflow-y: scroll; border: 1px solid #ccc; background: #fff; text-align: left; padding: 10px; margin-bottom: 10px; font-size: 14px; }
+        .chat-msg { margin-bottom: 4px; border-bottom: 1px dotted #eee; }
+        .chat-name { font-weight: bold; color: #555; }
+
+        /* 設定エリア */
+        .setting-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+        .setting-row label { flex: 1; text-align: left; }
+        .setting-row input { width: 60px; text-align: center; }
+        .total-check { font-weight: bold; color: blue; }
+        .total-check.error { color: red; }
+
+        /* プレイヤーリスト */
         #player-list { list-style: none; padding: 0; }
-        #player-list li { background: #e8f5e9; margin: 5px 0; padding: 10px; border-radius: 5px; border-bottom: 1px solid #c8e6c9; }
-        .error { color: red; font-weight: bold; }
+        #player-list li { background: #e8f5e9; margin: 3px 0; padding: 8px; border-radius: 4px; font-size: 14px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🐺 ワンナイト人狼<br><small>（プライベートルーム）</small></h1>
+        <h1>🐺 ワンナイト人狼</h1>
 
         <div id="login-screen">
-            <input type="text" id="username" placeholder="名前を入力">
-            <input type="password" id="password" placeholder="合言葉（パスワード）">
-            <button id="login-btn">部屋に入る</button>
-            <p id="error-msg" class="error"></p>
+            <p>名前と合言葉を入れてね</p>
+            <input type="text" id="username" placeholder="名前 (例: ポチ)">
+            <input type="password" id="password" placeholder="合言葉">
+            <button id="login-btn">入室する</button>
+            <p id="error-msg" style="color:red;"></p>
         </div>
 
-        <div id="game-screen" class="hidden">
-            <h2>参加者リスト</h2>
-            <ul id="player-list">
-                </ul>
-            <p>全員揃ったらゲーム開始！</p>
+        <div id="lobby-screen" class="hidden">
+            <div class="section">
+                <h3>👥 参加者 (<span id="player-count">0</span>人)</h3>
+                <ul id="player-list"></ul>
+            </div>
+
+            <div class="section">
+                <h3>💬 チャット</h3>
+                <div id="chat-history"></div>
+                <div style="display:flex; gap:5px;">
+                    <input type="text" id="chat-input" placeholder="メッセージ..." style="flex:1;">
+                    <button id="chat-send" style="width:60px;">送信</button>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>⚙️ ゲーム設定</h3>
+                <div class="setting-row">
+                    <label>⏱ 議論時間 (秒)</label>
+                    <input type="number" id="conf-time" value="180">
+                </div>
+                <hr>
+                <p style="font-size:0.9em; margin:5px 0;">役職の数 (合計: <span id="role-total">0</span>)</p>
+                <div class="setting-row"><label>🐺 人狼</label><input type="number" class="role-input" id="role-werewolf" data-role="werewolf" value="2"></div>
+                <div class="setting-row"><label>🔮 占い師</label><input type="number" class="role-input" id="role-seer" data-role="seer" value="1"></div>
+                <div class="setting-row"><label>🐱 怪盗</label><input type="number" class="role-input" id="role-thief" data-role="thief" value="1"></div>
+                <div class="setting-row"><label>👱 村人</label><input type="number" class="role-input" id="role-villager" data-role="villager" value="0"></div>
+                
+                <p id="match-status" class="total-check">設定待ち...</p>
+            </div>
+
+            <button id="start-game-btn" class="secondary" disabled>ゲーム開始 (準備中)</button>
             
-            <hr>
-            <button id="reset-btn" class="reset-btn">メンバーをリセット（解散）</button>
+            <button id="reset-btn" class="danger">解散・リセット</button>
         </div>
     </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-        import { getDatabase, ref, set, onValue, remove, onDisconnect } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
+        import { getDatabase, ref, set, update, onValue, push, onChildAdded, remove, onDisconnect } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
 
-        // ★設定1: 友達と決めたパスワードに書き換えてください
-        const PASSWORD = "2216";
-
-        // ★設定2: 部屋の名前（固定）
+        // ★設定: パスワード書き換え
+        const PASSWORD = "1234";
         const ROOM_ID = "my_private_room";
 
-        // Firebase設定（あなたのもの）
         const firebaseConfig = {
             apiKey: "AIzaSyCZZlMXREYtPTFXMTrjtATsa1xShWmZIZI",
             authDomain: "werewolf-756e4.firebaseapp.com",
@@ -64,73 +107,159 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // 要素の取得
-        const loginScreen = document.getElementById('login-screen');
-        const gameScreen = document.getElementById('game-screen');
-        const errorMsg = document.getElementById('error-msg');
+        // 変数
+        let myName = "";
+        let currentPlayers = 0;
 
         // --- ログイン処理 ---
         document.getElementById('login-btn').addEventListener('click', () => {
-            const name = document.getElementById('username').value;
-            const inputPass = document.getElementById('password').value;
+            const name = document.getElementById('username').value.trim();
+            const pass = document.getElementById('password').value;
+            if (!name) return alert("名前を入れてね");
+            if (pass !== PASSWORD) return alert("パスワードが違います");
 
-            // バリデーション
-            if (!name) {
-                errorMsg.textContent = "名前を入れてください";
-                return;
-            }
-            if (inputPass !== PASSWORD) {
-                errorMsg.textContent = "パスワードが違います";
-                return;
-            }
-
-            // ログイン成功！画面切り替え
-            errorMsg.textContent = "";
-            joinRoom(name);
+            myName = name;
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('lobby-screen').classList.remove('hidden');
+            
+            joinRoom();
         });
 
-        // --- 部屋に参加する処理 ---
-        function joinRoom(name) {
-            loginScreen.classList.add('hidden');
-            gameScreen.classList.remove('hidden');
-
-            // 1. Firebaseに自分の名前を書き込む
-            const myRef = ref(db, `rooms/${ROOM_ID}/players/${name}`);
-            set(myRef, {
-                role: "undecided",
-                status: "online"
-            });
-
-            // 【重要】ブラウザを閉じたら自動で消えるようにする設定
+        function joinRoom() {
+            // 参加登録
+            const myRef = ref(db, `rooms/${ROOM_ID}/players/${myName}`);
+            set(myRef, { status: "online", role: "undecided" });
             onDisconnect(myRef).remove();
 
-            // 2. 部屋の状況をリアルタイム監視する
-            const playersRef = ref(db, `rooms/${ROOM_ID}/players`);
-            onValue(playersRef, (snapshot) => {
-                const listElement = document.getElementById('player-list');
-                listElement.innerHTML = ""; // リセット
+            setupListeners();
+        }
 
-                const data = snapshot.val();
-                if (data) {
-                    // データがある場合、リストを表示
-                    Object.keys(data).forEach((playerName) => {
-                        const li = document.createElement('li');
-                        li.textContent = playerName + (playerName === name ? " (自分)" : "");
-                        listElement.appendChild(li);
-                    });
-                } else {
-                    // 誰もいない場合
-                    listElement.innerHTML = "<li>まだ誰もいません</li>";
+        // --- データ監視 (リスナー) ---
+        function setupListeners() {
+            // 1. プレイヤー一覧監視
+            onValue(ref(db, `rooms/${ROOM_ID}/players`), (snap) => {
+                const list = document.getElementById('player-list');
+                list.innerHTML = "";
+                const data = snap.val() || {};
+                currentPlayers = Object.keys(data).length;
+                document.getElementById('player-count').textContent = currentPlayers;
+
+                Object.keys(data).forEach(name => {
+                    const li = document.createElement('li');
+                    li.textContent = name + (name === myName ? " (自分)" : "");
+                    list.appendChild(li);
+                });
+                checkGameReady(); // 人数チェック
+            });
+
+            // 2. 設定監視 (誰かが設定を変えたら画面に反映)
+            onValue(ref(db, `rooms/${ROOM_ID}/settings`), (snap) => {
+                const val = snap.val();
+                if (val) {
+                    if(val.time) document.getElementById('conf-time').value = val.time;
+                    if(val.roles) {
+                        document.getElementById('role-werewolf').value = val.roles.werewolf || 0;
+                        document.getElementById('role-seer').value = val.roles.seer || 0;
+                        document.getElementById('role-thief').value = val.roles.thief || 0;
+                        document.getElementById('role-villager').value = val.roles.villager || 0;
+                    }
                 }
+                checkGameReady();
+            });
+
+            // 3. チャット受信
+            onChildAdded(ref(db, `rooms/${ROOM_ID}/chat`), (snap) => {
+                const msg = snap.val();
+                const div = document.createElement('div');
+                div.className = "chat-msg";
+                div.innerHTML = `<span class="chat-name">${msg.name}:</span> ${msg.text}`;
+                const history = document.getElementById('chat-history');
+                history.appendChild(div);
+                history.scrollTop = history.scrollHeight; // 自動スクロール
             });
         }
 
-        // --- リセット処理（全員を退出させる） ---
+        // --- 設定変更の送信 ---
+        // 数字を変えたらすぐにデータベースを更新する
+        const settingsInputs = document.querySelectorAll('.role-input, #conf-time');
+        settingsInputs.forEach(input => {
+            input.addEventListener('change', () => {
+                const settings = {
+                    time: parseInt(document.getElementById('conf-time').value),
+                    roles: {
+                        werewolf: parseInt(document.getElementById('role-werewolf').value),
+                        seer: parseInt(document.getElementById('role-seer').value),
+                        thief: parseInt(document.getElementById('role-thief').value),
+                        villager: parseInt(document.getElementById('role-villager').value)
+                    }
+                };
+                update(ref(db, `rooms/${ROOM_ID}/settings`), settings);
+            });
+        });
+
+        // --- チャット送信 ---
+        document.getElementById('chat-send').addEventListener('click', sendChat);
+        // エンターキーでも送信
+        document.getElementById('chat-input').addEventListener('keypress', (e) => {
+             if (e.key === 'Enter') sendChat(); 
+        });
+
+        function sendChat() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text) return;
+            push(ref(db, `rooms/${ROOM_ID}/chat`), {
+                name: myName,
+                text: text,
+                timestamp: Date.now()
+            });
+            input.value = "";
+        }
+
+        // --- 人数と役職数のチェック ---
+        function checkGameReady() {
+            // ワンナイト人狼は「プレイヤー人数 + 2枚」のカードが必要
+            const w = parseInt(document.getElementById('role-werewolf').value) || 0;
+            const s = parseInt(document.getElementById('role-seer').value) || 0;
+            const t = parseInt(document.getElementById('role-thief').value) || 0;
+            const v = parseInt(document.getElementById('role-villager').value) || 0;
+            
+            const totalCards = w + s + t + v;
+            document.getElementById('role-total').textContent = totalCards;
+
+            const statusText = document.getElementById('match-status');
+            const startBtn = document.getElementById('start-game-btn');
+
+            // 必要なカード枚数は、通常は参加人数+2枚（場に2枚余る）
+            const needed = currentPlayers + 2;
+
+            if (currentPlayers === 0) {
+                statusText.textContent = "参加者待ち...";
+                statusText.className = "total-check";
+                startBtn.disabled = true;
+            } else if (totalCards === needed) {
+                statusText.textContent = `OK! (参加者${currentPlayers}人 + 余り2枚)`;
+                statusText.className = "total-check";
+                startBtn.disabled = false;
+                startBtn.textContent = "ゲーム開始！";
+                startBtn.style.backgroundColor = "#ff9800"; // 色を変えて目立たせる
+            } else {
+                statusText.textContent = `カードが合いません (現在${totalCards}枚 / 必要${needed}枚)`;
+                statusText.className = "total-check error";
+                startBtn.disabled = true;
+                startBtn.textContent = "設定調整中...";
+                startBtn.style.backgroundColor = "#777";
+            }
+        }
+
+        // 解散
         document.getElementById('reset-btn').addEventListener('click', () => {
-            if(confirm("本当に全員のデータを消してリセットしますか？")) {
-                remove(ref(db, `rooms/${ROOM_ID}/players`));
+            if(confirm("全員退出させてリセットしますか？")) {
+                remove(ref(db, `rooms/${ROOM_ID}`));
+                location.reload();
             }
         });
+        
     </script>
 </body>
 </html>
