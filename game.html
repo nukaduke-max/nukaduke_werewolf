@@ -3,184 +3,209 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ワンナイト人狼（ゲーム中）</title>
+    <title>ゲーム中</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 10px; background-color: #2c3e50; color: white; }
-        h1 { margin: 10px 0; font-size: 1.5em; }
-        .card { background: white; color: black; padding: 15px; margin: 10px auto; border-radius: 8px; width: 80%; max-width: 300px; }
-        .action-area { margin-top: 20px; border-top: 1px solid #7f8c8d; padding-top: 20px; }
-        button { font-size: 16px; padding: 10px 20px; margin: 5px; border-radius: 5px; border: none; cursor: pointer; }
-        button.target { background-color: #e67e22; color: white; display: block; width: 80%; margin: 10px auto; }
-        button.next { background-color: #27ae60; color: white; font-weight: bold; margin-top: 30px; }
-        .result-box { background: #f1c40f; color: black; padding: 10px; margin: 10px; border-radius: 5px; font-weight: bold; }
+        body { font-family: sans-serif; text-align: center; padding: 10px; background-color: #222; color: white; }
+        h1, h2 { margin: 10px 0; }
+        .card { background: #444; padding: 20px; border-radius: 10px; margin: 20px auto; max-width: 400px; border: 2px solid #666; }
+        .role-text { font-size: 2.5em; font-weight: bold; color: #ff5252; }
+        
+        /* アクションエリア */
+        #action-area { background: #333; padding: 15px; margin-top: 20px; border-radius: 8px; border: 1px solid #ff9800; }
+        button { font-size: 16px; padding: 10px 20px; margin: 5px; cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 5px; }
+        button:disabled { background: #777; cursor: not-allowed; }
+        button.target-btn { background: #2196F3; display: block; width: 80%; margin: 5px auto; }
+        
+        .hidden { display: none; }
+        .log { color: #aaa; font-size: 0.9em; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <h1 id="header-title">🌙 夜のターン</h1>
-    <p id="welcome-msg">...</p>
 
-    <div class="card">
-        <p>あなたの役職</p>
-        <h2 id="my-role" style="font-size: 2em; color: #e74c3c;">確認中...</h2>
+    <div id="main-container">
+        <h2>🌙 夜のターン</h2>
+        <p>あなたの最初の役職</p>
+        
+        <div class="card">
+            <div id="my-role-display" class="role-text">???</div>
+            <p id="wait-msg">カードを確認中...</p>
+        </div>
+
+        <div id="action-area" class="hidden">
+            <h3 id="action-title">アクション</h3>
+            <p id="action-desc"></p>
+            <div id="action-buttons"></div>
+        </div>
+
+        <div id="system-message" style="margin-top: 20px; font-weight: bold; color: yellow;"></div>
+        
+        <button id="next-phase-btn" class="hidden" style="margin-top:30px; background:#555;">議論へ進む（未実装）</button>
     </div>
-
-    <div id="action-area" class="action-area hidden">
-        <p id="instruction-text">行動を選択してください</p>
-        <div id="buttons-container"></div>
-        <div id="action-result" class="hidden"></div>
-    </div>
-
-    <p id="debug-log" style="font-size:0.7em; color:#95a5a6; margin-top:50px;"></p>
 
     <script type="module">
         import { db, ref, get, update, onValue, ROOM_ID } from './config.js';
 
         const params = new URLSearchParams(window.location.search);
         const myName = params.get('name');
-        const logArea = document.getElementById('debug-log');
+        
+        let myData = null;
+        let hasActed = false; // アクション済みかどうかのフラグ
 
-        // 名前がない場合はエラー
-        if (!myName) {
-            document.body.innerHTML = "<h1>エラー: 名前がありません</h1>";
-        } else {
-            document.getElementById('welcome-msg').textContent = `${myName}さん`;
-            initGame();
-        }
+        // 1. 自分のデータを監視
+        onValue(ref(db, `rooms/${ROOM_ID}/players/${myName}`), (snap) => {
+            myData = snap.val();
+            if (!myData) return;
 
-        // ゲーム初期化
-        function initGame() {
-            // 自分の情報を監視
-            onValue(ref(db, `rooms/${ROOM_ID}/players/${myName}`), (snap) => {
-                const data = snap.val();
-                if (data && data.role) {
-                    document.getElementById('my-role').textContent = data.role;
-                    setupAction(data.role); // 役職ごとの画面を作る
-                } else {
-                    logArea.textContent = "役職データ受信待ち...";
-                }
-            });
-        }
+            // 画面表示（original_roleを表示し続けるのが基本）
+            document.getElementById('my-role-display').textContent = myData.original_role;
+            document.getElementById('wait-msg').textContent = "この役職でゲーム開始です";
 
-        // 役職ごとのアクション設定
-        function setupAction(role) {
-            const container = document.getElementById('buttons-container');
-            const instruction = document.getElementById('instruction-text');
+            // まだアクションしておらず、アクションが必要な役職ならUIを表示
+            if (!hasActed) {
+                checkRoleAction(myData.original_role);
+            }
+        });
+
+        // 役職ごとのアクション判定
+        function checkRoleAction(role) {
             const area = document.getElementById('action-area');
-            area.classList.remove('hidden');
-            container.innerHTML = ""; // ボタンをクリア
+            const title = document.getElementById('action-title');
+            const desc = document.getElementById('action-desc');
+            const btns = document.getElementById('action-buttons');
 
-            // すでに行動済みなら表示しない（簡易実装）
-            if (document.getElementById('action-result').innerHTML !== "") return;
+            // 既にUIが出ていれば何もしない
+            if (!area.classList.contains('hidden')) return;
 
-            if (role === "村人") {
-                instruction.textContent = "村人は夜の間、何もできません。";
-            } 
-            else if (role === "人狼") {
-                instruction.textContent = "仲間の人狼を確認します...";
-                checkWerewolves();
-            } 
-            else if (role === "占い師") {
-                instruction.textContent = "占う対象を選んでください";
-                // 他のプレイヤーボタン
-                createPlayerButtons((targetName) => {
-                    seeRole(targetName);
-                });
-                // 中央のカードボタン
-                const btn = document.createElement('button');
-                btn.className = "target";
-                btn.textContent = "中央のカードを見る";
-                btn.onclick = () => seeCenter();
-                container.appendChild(btn);
-            } 
-            else if (role === "怪盗") {
-                instruction.textContent = "交換する相手を選んでください";
-                createPlayerButtons((targetName) => {
-                    stealRole(targetName);
-                });
+            if (role === '占い師') {
+                area.classList.remove('hidden');
+                title.textContent = "🔮 占いの館";
+                desc.textContent = "「誰か一人」か「中央のカード」を占えます。";
+                
+                // 中央を占うボタン
+                const centerBtn = document.createElement('button');
+                centerBtn.textContent = "🎴 中央の2枚を見る";
+                centerBtn.onclick = () => actionSeerCenter();
+                btns.appendChild(centerBtn);
+
+                // プレイヤー一覧ボタン
+                createPlayerButtons("この人を占う", actionSeerPlayer);
+
+            } else if (role === '怪盗') {
+                area.classList.remove('hidden');
+                title.textContent = "🐱 怪盗の予告";
+                desc.textContent = "誰か一人から役職を盗み、自分と入れ替えます。";
+                
+                createPlayerButtons("この人の役職を盗む", actionThief);
+            
+            } else if (role === '人狼') {
+                // 人狼はアクション不要だが、仲間を表示する
+                area.classList.remove('hidden');
+                title.textContent = "🐺 人狼の仲間";
+                showWerewolves();
             }
         }
 
-        // プレイヤー一覧ボタンを作る便利関数
-        function createPlayerButtons(callback) {
+        // --- プレイヤー選択ボタンを作る便利関数 ---
+        function createPlayerButtons(label, callback) {
+            const btns = document.getElementById('action-buttons');
+            // 全プレイヤーを取得してボタン化
             get(ref(db, `rooms/${ROOM_ID}/players`)).then((snap) => {
                 const players = snap.val();
                 Object.keys(players).forEach(pName => {
-                    if (pName !== myName) { // 自分以外
-                        const btn = document.createElement('button');
-                        btn.className = "target";
-                        btn.textContent = `${pName}を占う/盗む`;
-                        btn.onclick = () => callback(pName);
-                        document.getElementById('buttons-container').appendChild(btn);
-                    }
+                    if (pName === myName) return; // 自分は選べない
+
+                    const btn = document.createElement('button');
+                    btn.className = "target-btn";
+                    btn.textContent = `${pName} (${label})`;
+                    btn.onclick = () => callback(pName);
+                    btns.appendChild(btn);
                 });
             });
         }
 
-        // --- アクション処理 ---
-
-        // 人狼: 仲間を見る
-        function checkWerewolves() {
+        // --- 🐺 人狼の処理 ---
+        function showWerewolves() {
             get(ref(db, `rooms/${ROOM_ID}/players`)).then((snap) => {
                 const players = snap.val();
-                let wolves = [];
-                Object.keys(players).forEach(p => {
-                    if (players[p].role === "人狼" && p !== myName) wolves.push(p);
+                let partners = [];
+                Object.keys(players).forEach(pName => {
+                    if (pName !== myName && players[pName].original_role === '人狼') {
+                        partners.push(pName);
+                    }
                 });
-                
-                const resultBox = document.getElementById('action-result');
-                resultBox.classList.remove('hidden');
-                if (wolves.length > 0) {
-                    resultBox.innerHTML = `仲間: ${wolves.join(", ")}`;
+
+                const desc = document.getElementById('action-desc');
+                if (partners.length > 0) {
+                    desc.textContent = `仲間は ${partners.join('さん, ')}さん です。`;
                 } else {
-                    resultBox.innerHTML = "仲間はいません（孤独な人狼）";
+                    desc.textContent = "仲間はいません。あなたは孤独な人狼です...";
+                    // ※ルールによってはここで中央が見れるが、今回は省略
                 }
             });
         }
 
-        // 占い師: 誰かを見る
-        function seeRole(targetName) {
-            get(ref(db, `rooms/${ROOM_ID}/players/${targetName}/role`)).then((snap) => {
-                showResult(`${targetName} は【${snap.val()}】でした`);
-            });
-        }
-
-        // 占い師: 中央を見る
-        function seeCenter() {
+        // --- 🔮 占い師の処理：中央を見る ---
+        function actionSeerCenter() {
+            if(!confirm("中央のカード2枚を確認しますか？")) return;
+            
             get(ref(db, `rooms/${ROOM_ID}/centerCards`)).then((snap) => {
-                const cards = snap.val();
-                showResult(`中央: 【${cards[0]}】と【${cards[1]}】`);
+                const cards = snap.val(); // ["人狼", "村人"] みたいな配列
+                const msg = `中央のカードは\n「${cards[0]}」と「${cards[1]}」\nでした！`;
+                finishAction(msg);
             });
         }
 
-        // 怪盗: 交換する
-        function stealRole(targetName) {
-            // 1. 相手の役職を取得
-            const targetPath = `rooms/${ROOM_ID}/players/${targetName}/role`;
-            const myPath = `rooms/${ROOM_ID}/players/${myName}/role`;
+        // --- 🔮 占い師の処理：人を占う ---
+        function actionSeerPlayer(targetName) {
+            if(!confirm(`${targetName}さんを占いますか？`)) return;
 
-            get(ref(db, targetPath)).then((snap) => {
-                const targetRole = snap.val();
+            // ★重要：original_role を見る！
+            get(ref(db, `rooms/${ROOM_ID}/players/${targetName}/original_role`)).then((snap) => {
+                const resultRole = snap.val();
+                const msg = `占い結果：\n${targetName}さんは\n「${resultRole}」\nでした！`;
+                finishAction(msg);
+            });
+        }
+
+        // --- 🐱 怪盗の処理：盗む ---
+        function actionThief(targetName) {
+            if(!confirm(`本当に ${targetName} さんから盗みますか？\n（あなたの役職が変わります）`)) return;
+
+            // 相手のデータを取得
+            get(ref(db, `rooms/${ROOM_ID}/players/${targetName}`)).then((snap) => {
+                const targetData = snap.val();
                 
-                // 2. 自分の役職(怪盗)と交換
-                const updates = {};
-                updates[targetPath] = "怪盗"; // 相手を怪盗に
-                updates[myPath] = targetRole; // 自分は相手の役職に
+                // ★あなたの理論通りの入れ替えロジック
+                // 1. 相手の original_role を取得（これが自分がなる役職）
+                // 2. 相手の team を取得（自分がその陣営になる）
+                // 3. 相手は強制的に team=0 (村人側) になる
 
-                update(ref(db), updates).then(() => {
-                    showResult(`盗んだ役職: 【${targetRole}】<br>(あなたは今から${targetRole}です)`);
-                    // 画面の表示も更新
-                    document.getElementById('my-role').textContent = targetRole; 
+                const updates = {};
+                
+                // 自分を書き換え
+                updates[`players/${myName}/role`] = `怪盗(元${targetData.original_role})`;
+                updates[`players/${myName}/team`] = targetData.team; 
+
+                // 相手を書き換え
+                updates[`players/${targetName}/role`] = `${targetData.original_role}(盗まれた)`;
+                updates[`players/${targetName}/team`] = 0; // 盗まれたら市民側
+
+                // 実行！
+                update(ref(db, `rooms/${ROOM_ID}`), updates).then(() => {
+                    const msg = `盗み成功！\nあなたは「${targetData.original_role}」になりました。\n（陣営も移動しました）`;
+                    finishAction(msg);
                 });
             });
         }
 
-        // 結果表示＆ボタン消去
-        function showResult(html) {
-            const box = document.getElementById('action-result');
-            box.innerHTML = html;
-            box.classList.remove('hidden');
-            document.getElementById('buttons-container').innerHTML = ""; // ボタンを隠す
-            document.getElementById('instruction-text').textContent = "行動完了";
+        // --- アクション終了処理 ---
+        function finishAction(message) {
+            hasActed = true;
+            document.getElementById('action-area').classList.add('hidden'); // ボタンを消す
+            
+            const sysMsg = document.getElementById('system-message');
+            sysMsg.innerText = message;
+            alert(message);
         }
 
     </script>
