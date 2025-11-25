@@ -5,38 +5,49 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>結果発表</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #222; color: white; }
+        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #222; color: white; transition: background-color 1s ease; }
         
+        /* 勝者バナー（より派手に） */
         #winner-banner { 
-            font-size: 2em; font-weight: bold; padding: 20px; 
-            margin: 20px 0; border: 4px solid white; border-radius: 10px;
-            background: #444; color: white;
+            font-size: 2.5em; font-weight: bold; padding: 30px 10px; 
+            margin: 20px 0; border: 5px solid white; border-radius: 15px;
+            background: rgba(0,0,0,0.5); color: white;
+            text-shadow: 2px 2px 4px #000;
+            box-shadow: 0 0 20px rgba(255,255,255,0.5);
         }
-        .win-villager { background-color: #4CAF50 !important; border-color: #81C784 !important; }
-        .win-werewolf { background-color: #F44336 !important; border-color: #E57373 !important; }
-        .win-tanner { background-color: #FF9800 !important; border-color: #FFB74D !important; }
+
+        /* チームごとのテーマカラー（bodyに適用） */
+        .bg-villager { background-color: #2E7D32 !important; } /* 村人勝利：緑 */
+        .bg-werewolf { background-color: #C62828 !important; } /* 人狼勝利：赤 */
+        .bg-tanner { background-color: #F57C00 !important; }   /* 吊り人勝利：オレンジ */
 
         ul { list-style: none; padding: 0; }
-        li { padding: 10px; border-bottom: 1px solid #444; }
-        .executed { text-decoration: line-through; color: #888; }
-        .executed::after { content: " 💀処刑"; color: red; font-weight: bold; text-decoration: none; }
-        .team-0 { color: #81C784; } .team-1 { color: #E57373; } .team-2 { color: #FFB74D; }
+        li { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.3); }
+        
+        .executed { text-decoration: line-through; opacity: 0.7; }
+        .executed::after { content: " 💀処刑"; color: #ffeb3b; font-weight: bold; text-decoration: none; font-size: 1.2em;}
+        
+        .team-0 { color: #A5D6A7; font-weight:bold; } /* 村人文字色 */
+        .team-1 { color: #EF9A9A; font-weight:bold; } /* 人狼文字色 */
+        .team-2 { color: #FFCC80; font-weight:bold; } /* 吊り人文字色 */
 
         #back-btn { 
-            background: #2196F3; color: white; border: none; 
-            padding: 15px 30px; font-size: 18px; border-radius: 50px; 
-            margin-top: 30px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            background: #fff; color: #333; border: none; font-weight: bold;
+            padding: 15px 40px; font-size: 18px; border-radius: 50px; 
+            margin-top: 40px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
-        #wait-status { color: #aaa; font-size: 0.8em; margin-top: 10px; }
+        #wait-status { font-size: 0.9em; margin-top: 10px; opacity: 0.8; }
     </style>
 </head>
 <body>
 
     <h1>🏆 結果発表</h1>
     <div id="winner-banner">集計中...</div>
-    <p id="execution-msg"></p>
+    
+    <h3 style="margin-top:30px;">💀 処刑された人</h3>
+    <p id="execution-msg" style="font-size:1.2em; font-weight:bold;">-</p>
 
-    <h3>🎭 正体と結果</h3>
+    <h3>🎭 プレイヤーの正体</h3>
     <ul id="player-result-list"></ul>
 
     <h3>🗳 投票の内訳</h3>
@@ -51,16 +62,16 @@
         const params = new URLSearchParams(window.location.search);
         const myName = params.get('name');
 
-        // 1. 「見ました」フラグを立てる
+        // 1. 閲覧済みフラグ
         update(ref(db, `rooms/${ROOM_ID}/players/${myName}`), { seenResult: true });
 
-        // 2. 結果計算と表示 (getで一度だけ取得)
+        // 2. 結果計算 (getで取得)
         get(ref(db, `rooms/${ROOM_ID}`)).then((snap) => {
             const data = snap.val();
             if (data) calculateResult(data);
         });
 
-        // 3. 全員の閲覧状況監視＆リセット
+        // 3. 全員確認したらリセット
         onValue(ref(db, `rooms/${ROOM_ID}/players`), (snap) => {
             const players = snap.val() || {};
             const playerList = Object.values(players);
@@ -70,10 +81,9 @@
             document.getElementById('wait-status').textContent = 
                 `結果確認済み: ${seenCount} / ${total} 人`;
 
-            // ★全員見終わったらサーバーをリセットして次の準備をする
             if (total > 0 && seenCount === total) {
                 const updates = {};
-                updates[`status`] = "waiting";     // ロビー待機状態に戻す
+                updates[`status`] = "waiting";     
                 updates[`phase`] = null;
                 updates[`endTime`] = null;
                 updates[`votes`] = null;
@@ -86,101 +96,120 @@
                     updates[`players/${pName}/actDone`] = null;
                     updates[`players/${pName}/seenResult`] = null;
                 });
-
                 update(ref(db, `rooms/${ROOM_ID}`), updates);
             }
         });
 
-        // ロビーへ戻るボタン (データは消さずに自分だけ移動)
         document.getElementById('back-btn').addEventListener('click', () => {
             window.location.href = `index.html?name=${encodeURIComponent(myName)}&auto=true`;
         });
 
-        // --- 結果計算ロジック ---
+        // --- 勝敗判定ロジック (ご要望通りに修正) ---
         function calculateResult(data) {
             const players = data.players || {};
             const votes = data.votes || {};
             const playerList = Object.keys(players);
+            
+            // --- A. 集計 ---
             const voteCounts = {};
             playerList.forEach(p => voteCounts[p] = 0);
-            voteCounts["NO_EXECUTION"] = 0;
-            const voteDetails = [];
             
+            const voteDetails = [];
             Object.keys(votes).forEach(voter => {
                 const target = votes[voter];
-                if (target === "NO_EXECUTION") {
-                    voteCounts["NO_EXECUTION"]++;
-                    voteDetails.push(`${voter} ➔ (平和村)`);
-                } else {
+                if (target !== "NO_EXECUTION") {
                     if (voteCounts[target] !== undefined) voteCounts[target]++;
                     voteDetails.push(`${voter} ➔ ${target}`);
+                } else {
+                    voteDetails.push(`${voter} ➔ (平和村希望)`);
                 }
             });
 
+            // --- B. 処刑者決定 (同数なら全員処刑) ---
             let maxVotes = 0;
+            // まず最大得票数を探す
             Object.keys(voteCounts).forEach(key => {
-                if (key !== "NO_EXECUTION" && voteCounts[key] > maxVotes) maxVotes = voteCounts[key];
+                if (voteCounts[key] > maxVotes) maxVotes = voteCounts[key];
             });
 
             let executedPlayers = [];
-            if (maxVotes > 1) {
+            // ★修正: 1票でも、それが最多なら処刑する (0票は除外)
+            if (maxVotes > 0) {
                 executedPlayers = playerList.filter(p => voteCounts[p] === maxVotes);
             }
 
+            // --- C. 勝利判定 (優先順位順) ---
+            // team: 0=村人, 1=人狼, 2=吊り人
+            
             let winnerTeam = ""; 
             let winMsg = "";
+
+            // 1. 吊り人が吊られているか？
             const tannerExecuted = executedPlayers.some(p => players[p].team === 2);
+            // 2. 人狼が吊られているか？
+            const werewolfExecuted = executedPlayers.some(p => players[p].team === 1);
+            // 3. 場に人狼がいるか？ (生存しているかではなく、メンバーにいるか)
+            const werewolfExists = playerList.some(p => players[p].team === 1);
+
             if (tannerExecuted) {
+                // 【最優先】吊り人の勝ち
                 winnerTeam = "tanner";
                 winMsg = "👻 吊り人の勝利！";
-            } else {
-                const werewolfExecuted = executedPlayers.some(p => players[p].team === 1);
-                const werewolfExists = playerList.some(p => players[p].team === 1);
-
-                if (werewolfExecuted) {
+            } 
+            else if (werewolfExecuted) {
+                // 【次点】人狼が吊られたら村人の勝ち
+                winnerTeam = "villager";
+                winMsg = "🎉 村人チームの勝利！";
+            } 
+            else if (werewolfExists) {
+                // 【その次】(誰も吊られてない or 村人が吊られた) かつ 人狼がいるなら、人狼の勝ち
+                // ※同票全員処刑ルールの場合、人狼が一人でも死ねば村人勝ちですが、
+                // ここに来ている時点で「人狼は死んでいない」ので、人狼の勝ちです。
+                winnerTeam = "werewolf";
+                winMsg = "🐺 人狼チームの勝利！";
+            } 
+            else {
+                // 【最後】人狼がいない (平和村) 場合
+                if (executedPlayers.length === 0) {
+                    // 平和村成功 (誰も吊らなかった)
                     winnerTeam = "villager";
-                    winMsg = "🎉 村人側の勝利！(人狼処刑)";
+                    winMsg = "🕊️ 平和村成功！村人勝利";
                 } else {
-                    if (executedPlayers.length === 0) {
-                        if (!werewolfExists) {
-                            winnerTeam = "villager";
-                            winMsg = "🎉 村人側の勝利！(平和村)";
-                        } else {
-                            winnerTeam = "werewolf";
-                            winMsg = "🐺 人狼側の勝利...(処刑なし)";
-                        }
-                    } else {
-                        if (!werewolfExists) {
-                            winnerTeam = "werewolf";
-                            winMsg = "💀 敗北...(村人を処刑)";
-                        } else {
-                            winnerTeam = "werewolf";
-                            winMsg = "🐺 人狼側の勝利！";
-                        }
-                    }
+                    // 平和村失敗 (誰か吊ってしまった) -> 怪盗などの人外(人狼側)の勝ち扱い
+                    winnerTeam = "werewolf";
+                    winMsg = "💀 敗北... (平和村失敗)";
                 }
             }
+
             displayScreen(winnerTeam, winMsg, executedPlayers, players, voteDetails);
         }
 
         function displayScreen(team, msg, executed, players, voteDetails) {
+            // 背景色を変える
+            document.body.className = `bg-${team}`;
+
             const banner = document.getElementById('winner-banner');
             banner.textContent = msg;
-            if (team === "villager") banner.className = "win-villager";
-            if (team === "werewolf") banner.className = "win-werewolf";
-            if (team === "tanner") banner.className = "win-tanner";
 
             const execMsg = document.getElementById('execution-msg');
-            if (executed.length > 0) execMsg.innerHTML = `処刑: <b>${executed.join(", ")}</b>`;
-            else execMsg.textContent = "処刑なし";
+            if (executed.length > 0) {
+                execMsg.innerHTML = `${executed.join("さん, ")}さん`;
+            } else {
+                execMsg.textContent = "なし (平和村投票)";
+            }
 
             const pList = document.getElementById('player-result-list');
             Object.keys(players).forEach(name => {
                 const p = players[name];
                 const li = document.createElement('li');
+                
                 let html = `<span style="font-size:1.1em;">${name}</span>: `;
                 html += `<span class="team-${p.team}">${p.role}</span>`;
-                if (executed.includes(name)) li.className = "executed";
+                
+                if (executed.includes(name)) {
+                    li.className = "executed";
+                }
+                
                 li.innerHTML = html;
                 pList.appendChild(li);
             });
