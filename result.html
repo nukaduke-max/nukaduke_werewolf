@@ -7,93 +7,129 @@
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #222; color: white; }
         
-        /* 勝者表示 */
+        /* 勝者バナー */
         #winner-banner { 
             font-size: 2em; font-weight: bold; padding: 20px; 
             margin: 20px 0; border: 4px solid white; border-radius: 10px;
             background: #444; color: white;
         }
-        .win-villager { background-color: #4CAF50 !important; color: white; border-color: #81C784 !important; }
-        .win-werewolf { background-color: #F44336 !important; color: white; border-color: #E57373 !important; }
-        .win-tanner { background-color: #FF9800 !important; color: white; border-color: #FFB74D !important; }
+        .win-villager { background-color: #4CAF50 !important; border-color: #81C784 !important; }
+        .win-werewolf { background-color: #F44336 !important; border-color: #E57373 !important; }
+        .win-tanner { background-color: #FF9800 !important; border-color: #FFB74D !important; }
 
-        /* リスト */
-        .section-title { margin-top: 30px; border-bottom: 1px solid #555; padding-bottom: 5px; color: #aaa; }
         ul { list-style: none; padding: 0; }
         li { padding: 10px; border-bottom: 1px solid #444; }
-        
-        .role-reveal { font-weight: bold; font-size: 1.2em; }
-        .team-0 { color: #81C784; } /* 村人 */
-        .team-1 { color: #E57373; } /* 人狼 */
-        .team-2 { color: #FFB74D; } /* 吊り人 */
-        
         .executed { text-decoration: line-through; color: #888; }
         .executed::after { content: " 💀処刑"; color: red; font-weight: bold; text-decoration: none; }
+        .team-0 { color: #81C784; } .team-1 { color: #E57373; } .team-2 { color: #FFB74D; }
 
-        /* 次へボタン */
-        #reset-btn { 
+        /* ロビーへ戻るボタン */
+        #back-btn { 
             background: #2196F3; color: white; border: none; 
             padding: 15px 30px; font-size: 18px; border-radius: 50px; 
             margin-top: 30px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
+        #wait-status { color: #aaa; font-size: 0.8em; margin-top: 10px; }
     </style>
 </head>
 <body>
 
     <h1>🏆 結果発表</h1>
-
     <div id="winner-banner">集計中...</div>
     <p id="execution-msg"></p>
 
-    <h3 class="section-title">🎭 正体と結果</h3>
+    <h3>🎭 正体と結果</h3>
     <ul id="player-result-list"></ul>
 
-    <h3 class="section-title">🗳 投票の内訳</h3>
+    <h3>🗳 投票の内訳</h3>
     <ul id="vote-detail-list"></ul>
 
-    <button id="reset-btn">ロビーに戻る</button>
+    <button id="back-btn">ロビーに戻る</button>
+    <p id="wait-status">他のメンバーの確認待ち...</p>
 
     <script type="module">
-        import { db, ref, get, update, remove, ROOM_ID } from './config.js';
+        import { db, ref, get, update, onValue, ROOM_ID } from './config.js';
 
-        // ページを開いたら一度だけ計算・表示する
+        const params = new URLSearchParams(window.location.search);
+        const myName = params.get('name');
+
+        // 1. ページを開いたらすぐに「結果を見ました」とサーバーに報告
+        update(ref(db, `rooms/${ROOM_ID}/players/${myName}`), { seenResult: true });
+
+        // 2. データの取得と表示（getを使うので、後でデータが消えても表示は残る）
         get(ref(db, `rooms/${ROOM_ID}`)).then((snap) => {
             const data = snap.val();
-            if (data) {
-                calculateResult(data);
+            if (data) calculateResult(data);
+        });
+
+        // 3. 全員の「見ました」状況を監視して、最後の人に掃除させる
+        onValue(ref(db, `rooms/${ROOM_ID}/players`), (snap) => {
+            const players = snap.val() || {};
+            const playerList = Object.values(players);
+            const total = playerList.length;
+            const seenCount = playerList.filter(p => p.seenResult).length;
+
+            document.getElementById('wait-status').textContent = 
+                `結果確認済み: ${seenCount} / ${total} 人`;
+
+            // ★ここがミソ！ 全員が見終わったら、サーバーをきれいに掃除する
+            if (total > 0 && seenCount === total) {
+                // 重複処理を防ぐため、自分が「まだロビーに戻っていない最後の人」なら実行する
+                // （厳密には誰か一人がやればいいので、updateを投げても問題ない）
+                
+                // 次のゲームのためのリセットデータ
+                const updates = {};
+                updates[`status`] = "waiting";     // ロビー待機状態に戻す
+                updates[`phase`] = null;
+                updates[`endTime`] = null;
+                updates[`votes`] = null;
+                updates[`gameTime`] = null;
+                
+                // プレイヤーの状態もリセット（役職を消して、未定に戻す）
+                Object.keys(players).forEach(pName => {
+                    updates[`players/${pName}/role`] = "undecided";
+                    updates[`players/${pName}/original_role`] = null;
+                    updates[`players/${pName}/team`] = null;
+                    updates[`players/${pName}/actDone`] = null;
+                    updates[`players/${pName}/seenResult`] = null; // フラグも消す
+                });
+
+                // 実行！
+                update(ref(db, `rooms/${ROOM_ID}`), updates);
             }
         });
 
+        // --- ロビーに戻るボタン ---
+        document.getElementById('back-btn').addEventListener('click', () => {
+            // ★サーバーのデータは消さずに、自分だけさっさとロビーに移動する
+            // URLに「auto=true」をつけて、ログインをスキップさせる
+            window.location.href = `index.html?name=${encodeURIComponent(myName)}&auto=true`;
+        });
+
+        // --- 以下、集計ロジック（変更なし） ---
         function calculateResult(data) {
             const players = data.players || {};
             const votes = data.votes || {};
             const playerList = Object.keys(players);
-
-            // 1. 票を集計する
             const voteCounts = {};
             playerList.forEach(p => voteCounts[p] = 0);
-            voteCounts["NO_EXECUTION"] = 0; // 平和村投票用
-
-            // 誰が誰に入れたかのリスト作成
+            voteCounts["NO_EXECUTION"] = 0;
             const voteDetails = [];
+            
             Object.keys(votes).forEach(voter => {
                 const target = votes[voter];
                 if (target === "NO_EXECUTION") {
                     voteCounts["NO_EXECUTION"]++;
-                    voteDetails.push(`${voter} ➔ (投票なし)`);
+                    voteDetails.push(`${voter} ➔ (平和村)`);
                 } else {
                     if (voteCounts[target] !== undefined) voteCounts[target]++;
                     voteDetails.push(`${voter} ➔ ${target}`);
                 }
             });
 
-            // 2. 処刑者を決定する
-            // ルール: 最多得票者が処刑。ただし最多票が1票以下の場合は「処刑なし」
             let maxVotes = 0;
             Object.keys(voteCounts).forEach(key => {
-                if (key !== "NO_EXECUTION" && voteCounts[key] > maxVotes) {
-                    maxVotes = voteCounts[key];
-                }
+                if (key !== "NO_EXECUTION" && voteCounts[key] > maxVotes) maxVotes = voteCounts[key];
             });
 
             let executedPlayers = [];
@@ -101,126 +137,71 @@
                 executedPlayers = playerList.filter(p => voteCounts[p] === maxVotes);
             }
 
-            // 3. 勝利判定
-            // teamID: 0=村人, 1=人狼, 2=吊り人
-            let winnerTeam = ""; // "villager", "werewolf", "tanner"
+            let winnerTeam = ""; 
             let winMsg = "";
-
-            // A. 吊り人チェック
             const tannerExecuted = executedPlayers.some(p => players[p].team === 2);
             if (tannerExecuted) {
                 winnerTeam = "tanner";
                 winMsg = "👻 吊り人の勝利！";
             } else {
-                // B. 人狼処刑チェック
                 const werewolfExecuted = executedPlayers.some(p => players[p].team === 1);
-                
-                // 場に人狼がいるか？
                 const werewolfExists = playerList.some(p => players[p].team === 1);
 
                 if (werewolfExecuted) {
                     winnerTeam = "villager";
-                    winMsg = "🎉 村人チームの勝利！ (人狼を処刑しました)";
+                    winMsg = "🎉 村人側の勝利！(人狼処刑)";
                 } else {
                     if (executedPlayers.length === 0) {
-                        // 誰も処刑されなかった場合
                         if (!werewolfExists) {
                             winnerTeam = "villager";
-                            winMsg = "🎉 村人チームの勝利！ (平和村成功)";
+                            winMsg = "🎉 村人側の勝利！(平和村)";
                         } else {
                             winnerTeam = "werewolf";
-                            winMsg = "🐺 人狼チームの勝利... (誰も処刑されませんでした)";
+                            winMsg = "🐺 人狼側の勝利...(処刑なし)";
                         }
                     } else {
-                        // 誰か処刑されたが、それは人狼ではなかった
                         if (!werewolfExists) {
-                            winnerTeam = "werewolf"; // 村人しかいないのに村人を吊った＝敗北扱い
-                            winMsg = "💀 敗北... (平和村なのに処刑してしまいました)";
+                            winnerTeam = "werewolf";
+                            winMsg = "💀 敗北...(村人を処刑)";
                         } else {
                             winnerTeam = "werewolf";
-                            winMsg = "🐺 人狼チームの勝利！";
+                            winMsg = "🐺 人狼側の勝利！";
                         }
                     }
                 }
             }
-
             displayScreen(winnerTeam, winMsg, executedPlayers, players, voteDetails);
         }
 
         function displayScreen(team, msg, executed, players, voteDetails) {
-            // バナー表示
             const banner = document.getElementById('winner-banner');
             banner.textContent = msg;
             if (team === "villager") banner.className = "win-villager";
             if (team === "werewolf") banner.className = "win-werewolf";
             if (team === "tanner") banner.className = "win-tanner";
 
-            // 処刑メッセージ
             const execMsg = document.getElementById('execution-msg');
-            if (executed.length > 0) {
-                execMsg.innerHTML = `処刑されたのは <b>${executed.join("さん, ")}さん</b> でした。`;
-            } else {
-                execMsg.textContent = "処刑された人はいませんでした。";
-            }
+            if (executed.length > 0) execMsg.innerHTML = `処刑: <b>${executed.join(", ")}</b>`;
+            else execMsg.textContent = "処刑なし";
 
-            // プレイヤーリスト表示
             const pList = document.getElementById('player-result-list');
             Object.keys(players).forEach(name => {
                 const p = players[name];
                 const li = document.createElement('li');
-                
-                // 名前と役職
                 let html = `<span style="font-size:1.1em;">${name}</span>: `;
-                html += `<span class="role-reveal team-${p.team}">${p.role}</span>`;
-                
-                // 処刑マーク
-                if (executed.includes(name)) {
-                    li.className = "executed";
-                }
-                
+                html += `<span class="team-${p.team}">${p.role}</span>`;
+                if (executed.includes(name)) li.className = "executed";
                 li.innerHTML = html;
                 pList.appendChild(li);
             });
 
-            // 投票詳細
             const vList = document.getElementById('vote-detail-list');
-            voteDetails.forEach(detail => {
+            voteDetails.forEach(d => {
                 const li = document.createElement('li');
-                li.textContent = detail;
+                li.textContent = d;
                 vList.appendChild(li);
             });
         }
-
-        // --- 次のゲームへ（ロビーに戻る） ---
-        document.getElementById('reset-btn').addEventListener('click', () => {
-            if(!confirm("ロビーに戻りますか？")) return;
-
-            // 部屋の状態を初期化する
-            const updates = {};
-            updates[`phase`] = null; // フェーズリセット
-            updates[`endTime`] = null;
-            updates[`votes`] = null; // 投票リセット
-            updates[`gameTime`] = null;
-            updates[`status`] = "waiting"; // ロビー待機状態へ
-
-            // プレイヤーごとの状態もリセット
-            // ※全員分やるのは大変なので、とりあえず部屋のstatusを変えて、
-            // 各自がロビーに戻った時に上書きされる仕組みに任せるか、ここで消すか。
-            // ここでは簡易的に「投票とフェーズ」だけ消して、index.htmlに戻します。
-
-            update(ref(db, `rooms/${ROOM_ID}`), updates).then(() => {
-                window.location.href = "index.html";
-            });
-        });
-        
-        // 他の人がリセットした場合も自動で戻るようにする
-        import { onValue } from './config.js';
-        onValue(ref(db, `rooms/${ROOM_ID}/status`), (snap) => {
-            if (snap.val() === "waiting") {
-                window.location.href = "index.html";
-            }
-        });
-
     </script>
 </body>
 </html>
