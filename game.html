@@ -9,19 +9,13 @@
         .card { background: #444; padding: 20px; border-radius: 10px; margin: 20px auto; max-width: 400px; border: 2px solid #666; }
         .role-text { font-size: 2.5em; font-weight: bold; color: #ff5252; }
         
-        /* アクション・待機エリア */
-        .area-box { background: #333; padding: 15px; margin-top: 20px; border-radius: 8px; border: 1px solid #ff9800; }
-        .hidden { display: none !important; }
-
-        /* ボタン */
-        button { font-size: 16px; padding: 10px 20px; margin: 5px; cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 5px; }
+        #action-area { background: #333; padding: 15px; margin-top: 20px; border-radius: 8px; border: 1px solid #ff9800; }
+        button { font-size: 16px; padding: 12px 24px; margin: 5px; cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 5px; width: 80%; max-width: 300px;}
         button:disabled { background: #777; cursor: not-allowed; }
-        button.target-btn { background: #2196F3; display: block; width: 80%; margin: 5px auto; }
-        button.finish-btn { background: #E91E63; font-weight: bold; width: 100%; font-size: 1.2em; margin-top: 15px; }
-
-        /* タイマー */
-        #timer-display { font-size: 4em; font-weight: bold; color: #00e676; margin: 20px 0; }
-        .vote-link { font-size: 1.2em; color: #4fc3f7; text-decoration: underline; cursor: pointer; }
+        button.target-btn { background: #2196F3; width: 90%; margin: 5px auto; display: block; }
+        
+        .hidden { display: none; }
+        #timer-display { font-size: 3em; font-weight: bold; color: yellow; margin: 20px 0; }
     </style>
 </head>
 <body>
@@ -32,26 +26,26 @@
             <p>あなたの最初の役職</p>
             <div class="card">
                 <div id="my-role-display" class="role-text">???</div>
+                <p id="wait-msg">カードを確認中...</p>
             </div>
 
-            <div id="action-area" class="area-box hidden">
+            <div id="action-area" class="hidden">
                 <h3 id="action-title">アクション</h3>
                 <p id="action-desc"></p>
                 <div id="action-buttons"></div>
             </div>
 
-            <div id="wait-area" class="area-box">
-                <p id="wait-msg">アクションが終わったらボタンを押してください</p>
-                <button id="finish-btn" class="finish-btn">確認・行動完了</button>
-                <p id="ready-count" style="color:yellow; margin-top:10px;">待機中: - / -</p>
+            <div id="waiting-area" class="hidden">
+                <h3 style="color: #4CAF50;">✅ 準備完了</h3>
+                <p>他のプレイヤーを待っています...<br>(画面はそのままでお待ちください)</p>
             </div>
         </div>
 
-        <div id="discussion-phase" class="hidden">
-            <h2>☀️ 朝：議論タイム</h2>
-            <p>怪しい人を探し出してください！</p>
+        <div id="day-phase" class="hidden">
+            <h2>☀️ 議論タイム</h2>
             <div id="timer-display">00:00</div>
-            <p>時間が来たら投票画面へ移動します</p>
+            <p>怪盗は誰だ！？人狼を探し出せ！</p>
+            <p id="my-current-role-memo" style="color:gray; font-size:0.8em;">(あなたの初期役職: <span id="memo-role"></span>)</p>
         </div>
     </div>
 
@@ -62,78 +56,44 @@
         const myName = params.get('name');
         
         let myData = null;
-        let hasActed = false; // アクション済みフラグ
+        let isReady = false;
         let timerInterval = null;
 
-        // --- 1. データの監視開始 ---
-        
-        // 自分のデータを監視
+        // 1. 自分のデータを監視
         onValue(ref(db, `rooms/${ROOM_ID}/players/${myName}`), (snap) => {
             myData = snap.val();
             if (!myData) return;
-            
-            // 役職表示
-            document.getElementById('my-role-display').textContent = myData.original_role;
-            
-            // アクションUIの表示制御
-            // (まだ完了ボタンを押しておらず、かつアクションが必要な役職なら)
-            if (!myData.actDone && !hasActed) {
-                checkRoleAction(myData.original_role);
-            }
 
-            // 既に完了ボタンを押している場合
-            if (myData.actDone) {
-                document.getElementById('finish-btn').disabled = true;
-                document.getElementById('finish-btn').textContent = "他の人を待っています...";
-                document.getElementById('action-area').classList.add('hidden'); // アクション隠す
+            // 初期役職を表示
+            document.getElementById('my-role-display').textContent = myData.original_role;
+            document.getElementById('memo-role').textContent = myData.original_role;
+            document.getElementById('wait-msg').textContent = "この役職でゲーム開始です";
+
+            // まだ準備完了しておらず、かつ夜フェーズならアクション画面を出す
+            // (リロード対策: isReadyがFirebase側でtrueなら待機画面へ)
+            if (myData.isReady) {
+                showWaiting();
+            } else {
+                checkRoleAction(myData.original_role);
             }
         });
 
-        // 部屋全体のステータス監視 (議論開始用)
+        // 2. ゲーム全体の進行を監視（夜→昼の切り替え）
         onValue(ref(db, `rooms/${ROOM_ID}`), (snap) => {
             const roomData = snap.val();
             if (!roomData) return;
 
-            // ■全員の準備状況チェック (夜フェーズのみ)
-            if (roomData.players && (!roomData.phase || roomData.phase === 'night')) {
-                const players = Object.values(roomData.players);
-                const total = players.length;
-                const done = players.filter(p => p.actDone).length;
-                
-                document.getElementById('ready-count').textContent = `準備完了: ${done} / ${total} 人`;
-
-                // もし「全員完了」かつ「自分が最後の1人」なら、フェーズを変える
-                // (重複処理を防ぐため、actDoneがtrueの自分自身がトリガーになる)
-                if (done === total && myData && myData.actDone) {
-                    // 議論終了時間を計算 (現在時刻 + 設定秒数)
-                    const gameTime = roomData.gameTime || 180;
-                    const endTime = Date.now() + (gameTime * 1000);
-
-                    update(ref(db, `rooms/${ROOM_ID}`), {
-                        phase: "discussion",
-                        endTime: endTime
-                    });
-                }
-            }
-
-            // ■議論フェーズへの切り替え
-            if (roomData.phase === 'discussion') {
-                startDiscussion(roomData.endTime);
+            // ステータスが「discussion（議論）」になったら画面を切り替え
+            if (roomData.status === 'discussion') {
+                startDayPhase(roomData.endTime);
+            } 
+            // まだ「playing（夜）」なら、全員準備できたかチェック（管理者役の処理）
+            else if (roomData.status === 'playing') {
+                checkAllReady(roomData);
             }
         });
 
-
-        // --- 2. ボタン処理 ---
-
-        // 「確認・行動完了」ボタン
-        document.getElementById('finish-btn').addEventListener('click', () => {
-            // Firebaseに「終わったよ」と書き込む
-            update(ref(db, `rooms/${ROOM_ID}/players/${myName}`), {
-                actDone: true
-            });
-        });
-
-        // --- 3. アクションロジック (前のコードと同じ) ---
+        // 役職ごとのアクション表示
         function checkRoleAction(role) {
             const area = document.getElementById('action-area');
             const title = document.getElementById('action-title');
@@ -143,46 +103,55 @@
             // 既に表示済みなら何もしない
             if (!area.classList.contains('hidden')) return;
 
+            area.classList.remove('hidden');
+            btns.innerHTML = ""; // ボタンをクリア
+
             if (role === '占い師') {
-                area.classList.remove('hidden');
-                title.textContent = "🔮 占いアクション";
-                desc.textContent = "占う対象を選んでください";
+                title.textContent = "🔮 占いの館";
+                desc.textContent = "「誰か一人」か「中央のカード」を占ってください。";
                 
                 const centerBtn = document.createElement('button');
-                centerBtn.textContent = "🎴 中央を見る";
+                centerBtn.textContent = "🎴 中央の2枚を見る";
                 centerBtn.onclick = () => actionSeerCenter();
                 btns.appendChild(centerBtn);
-                createPlayerButtons("占う", actionSeerPlayer);
+
+                createPlayerButtons("この人を占う", actionSeerPlayer);
 
             } else if (role === '怪盗') {
-                area.classList.remove('hidden');
-                title.textContent = "🐱 怪盗アクション";
-                desc.textContent = "盗む対象を選んでください";
-                createPlayerButtons("盗む", actionThief);
+                title.textContent = "🐱 怪盗の予告";
+                desc.textContent = "誰か一人から役職を盗むか、盗まないか選べます。";
+                
+                createPlayerButtons("この人から盗む", actionThief);
+                
+                // 怪盗は「盗まない」選択肢も作っておく
+                const noStealBtn = document.createElement('button');
+                noStealBtn.style.backgroundColor = "#777";
+                noStealBtn.textContent = "盗まない（何もしない）";
+                noStealBtn.onclick = () => finishAction("何も盗みませんでした。");
+                btns.appendChild(noStealBtn);
             
             } else if (role === '人狼') {
-                area.classList.remove('hidden');
-                title.textContent = "🐺 仲間確認";
-                showWerewolves();
+                title.textContent = "🐺 人狼の確認";
+                showWerewolves(); // 仲間を表示
+                addConfirmButton("確認しました"); // 完了ボタンを追加
+            } else {
+                // 村人やその他
+                title.textContent = "👱 確認";
+                desc.textContent = "特に夜の行動はありません。";
+                addConfirmButton("確認しました");
             }
         }
 
-        // --- アクション詳細関数 ---
-        function createPlayerButtons(label, callback) {
+        // --- 共通: 確認完了ボタンを追加する関数 ---
+        function addConfirmButton(text) {
             const btns = document.getElementById('action-buttons');
-            get(ref(db, `rooms/${ROOM_ID}/players`)).then((snap) => {
-                const players = snap.val();
-                Object.keys(players).forEach(pName => {
-                    if (pName === myName) return;
-                    const btn = document.createElement('button');
-                    btn.className = "target-btn";
-                    btn.textContent = `${pName} を${label}`;
-                    btn.onclick = () => callback(pName);
-                    btns.appendChild(btn);
-                });
-            });
+            const btn = document.createElement('button');
+            btn.textContent = text;
+            btn.onclick = () => finishAction("準備完了しました。");
+            btns.appendChild(btn);
         }
 
+        // --- 🐺 人狼の仲間表示 ---
         function showWerewolves() {
             get(ref(db, `rooms/${ROOM_ID}/players`)).then((snap) => {
                 const players = snap.val();
@@ -192,80 +161,125 @@
                         partners.push(pName);
                     }
                 });
-                document.getElementById('action-desc').innerText = 
-                    partners.length > 0 ? `仲間: ${partners.join(', ')}` : "仲間はいません（単独）";
+                const desc = document.getElementById('action-desc');
+                if (partners.length > 0) {
+                    desc.textContent = `仲間は ${partners.join('さん, ')}さん です。`;
+                } else {
+                    desc.textContent = "仲間はいません。単独の人狼です。";
+                }
             });
         }
 
+        // --- 🔮 占い師アクション ---
         function actionSeerCenter() {
-            if(!confirm("中央を見ますか？")) return;
             get(ref(db, `rooms/${ROOM_ID}/centerCards`)).then((snap) => {
-                const c = snap.val();
-                alert(`中央のカード: [${c[0]}] [${c[1]}]`);
-                hasActed = true; // アクション済みフラグ
-                document.getElementById('action-buttons').innerHTML = ""; // ボタン消す
-                document.getElementById('action-desc').textContent = "アクション完了。下のボタンで確定してください。";
+                const cards = snap.val();
+                alert(`中央のカードは\n「${cards[0]}」と「${cards[1]}」\nでした！`);
+                finishAction("占いが完了しました。");
+            });
+        }
+        function actionSeerPlayer(targetName) {
+            get(ref(db, `rooms/${ROOM_ID}/players/${targetName}/original_role`)).then((snap) => {
+                const r = snap.val();
+                alert(`${targetName}さんは\n「${r}」\nでした！`);
+                finishAction("占いが完了しました。");
             });
         }
 
-        function actionSeerPlayer(target) {
-            if(!confirm(`${target}さんを占いますか？`)) return;
-            get(ref(db, `rooms/${ROOM_ID}/players/${target}/original_role`)).then((snap) => {
-                alert(`${target}さんは「${snap.val()}」でした`);
-                hasActed = true;
-                document.getElementById('action-buttons').innerHTML = "";
-                document.getElementById('action-desc').textContent = "アクション完了。下のボタンで確定してください。";
-            });
-        }
-
-        function actionThief(target) {
-            if(!confirm(`${target}さんから盗みますか？`)) return;
-            get(ref(db, `rooms/${ROOM_ID}/players/${target}`)).then((snap) => {
-                const tData = snap.val();
+        // --- 🐱 怪盗アクション ---
+        function actionThief(targetName) {
+            if(!confirm(`${targetName}から盗みますか？`)) return;
+            get(ref(db, `rooms/${ROOM_ID}/players/${targetName}`)).then((snap) => {
+                const targetData = snap.val();
                 const updates = {};
                 
-                // データの入れ替え（以前のロジック）
-                updates[`players/${myName}/role`] = `怪盗(元${tData.original_role})`;
-                updates[`players/${myName}/team`] = tData.team;
-                updates[`players/${target}/role`] = `${tData.original_role}(盗まれた)`;
-                updates[`players/${target}/team`] = 0;
+                // 入れ替えロジック
+                updates[`players/${myName}/role`] = `怪盗(元${targetData.original_role})`;
+                updates[`players/${myName}/team`] = targetData.team; 
+                updates[`players/${targetName}/role`] = `${targetData.original_role}(盗まれた)`;
+                updates[`players/${targetName}/team`] = 0; // 村人側へ
 
                 update(ref(db, `rooms/${ROOM_ID}`), updates).then(() => {
-                    alert(`盗みました！あなたは「${tData.original_role}」になりました。`);
-                    hasActed = true;
-                    document.getElementById('action-buttons').innerHTML = "";
-                    document.getElementById('action-desc').textContent = "アクション完了。下のボタンで確定してください。";
+                    alert(`盗み成功！\nあなたは「${targetData.original_role}」になりました。`);
+                    finishAction("盗みが完了しました。");
                 });
             });
         }
 
+        // --- 共通: アクション完了処理 ---
+        function finishAction(msg) {
+            // Firebaseに「準備完了(isReady: true)」を送信
+            update(ref(db, `rooms/${ROOM_ID}/players/${myName}`), {
+                isReady: true
+            });
+            showWaiting();
+        }
 
-        // --- 4. 議論タイマー処理 ---
-        function startDiscussion(endTime) {
-            // 画面切り替え
+        function showWaiting() {
+            document.getElementById('action-area').classList.add('hidden');
+            document.getElementById('waiting-area').classList.remove('hidden');
+        }
+
+        // --- プレイヤー選択ボタン作成 ---
+        function createPlayerButtons(label, callback) {
+            const btns = document.getElementById('action-buttons');
+            get(ref(db, `rooms/${ROOM_ID}/players`)).then((snap) => {
+                Object.keys(snap.val()).forEach(pName => {
+                    if (pName === myName) return;
+                    const btn = document.createElement('button');
+                    btn.className = "target-btn";
+                    btn.textContent = `${pName} (${label})`;
+                    btn.onclick = () => callback(pName);
+                    btns.appendChild(btn);
+                });
+            });
+        }
+
+        // --- 管理者処理: 全員準備OKかチェック ---
+        function checkAllReady(roomData) {
+            const players = roomData.players;
+            if (!players) return;
+
+            // 全員の isReady が true か確認
+            const allReady = Object.values(players).every(p => p.isReady === true);
+            
+            // 全員OKなら、次のフェーズへ（※重複実行を防ぐためendTimeがない場合のみ書き込む）
+            if (allReady && !roomData.endTime) {
+                // 終了時刻を計算 (現在時刻 + 設定時間秒)
+                const duration = roomData.gameTime || 180;
+                const endTime = Date.now() + (duration * 1000);
+
+                update(ref(db, `rooms/${ROOM_ID}`), {
+                    status: 'discussion',
+                    endTime: endTime
+                });
+            }
+        }
+
+        // --- ☀️ 議論フェーズの開始 ---
+        function startDayPhase(endTime) {
             document.getElementById('night-phase').classList.add('hidden');
-            document.getElementById('discussion-phase').classList.remove('hidden');
+            document.getElementById('day-phase').classList.remove('hidden');
 
             // タイマー開始
             if (timerInterval) clearInterval(timerInterval);
             
             timerInterval = setInterval(() => {
                 const now = Date.now();
-                const remain = Math.max(0, Math.ceil((endTime - now) / 1000));
-                
-                // 分:秒 表記にする
-                const m = Math.floor(remain / 60).toString().padStart(2, '0');
-                const s = (remain % 60).toString().padStart(2, '0');
-                document.getElementById('timer-display').textContent = `${m}:${s}`;
+                const diff = endTime - now;
 
-                // 0秒になったら
-                if (remain <= 0) {
+                if (diff <= 0) {
                     clearInterval(timerInterval);
+                    document.getElementById('timer-display').textContent = "00:00";
                     document.getElementById('timer-display').style.color = "red";
-                    document.getElementById('timer-display').textContent = "投票へ移動！";
-                    
-                    // 少し待ってから投票画面へ（次回実装）
-                    // setTimeout(() => { window.location.href = 'vote.html...'; }, 2000);
+                    alert("議論終了！投票へ移ります。");
+                    // ここに投票画面への遷移処理などを書く
+                } else {
+                    // 分:秒 の形式にする
+                    const m = Math.floor(diff / 60000);
+                    const s = Math.floor((diff % 60000) / 1000);
+                    document.getElementById('timer-display').textContent = 
+                        `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
                 }
             }, 1000);
         }
