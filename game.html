@@ -183,11 +183,11 @@
                 const updates = {};
                 
                 // 自分を書き換え
-                updates[`players/${myName}/role`] = `怪盗(元${targetData.original_role})`;
+                updates[`players/${myName}/role`] = `${targetData.original_role}(元怪盗)`;
                 updates[`players/${myName}/team`] = targetData.team; 
 
                 // 相手を書き換え
-                updates[`players/${targetName}/role`] = `${targetData.original_role}(盗まれた)`;
+                updates[`players/${targetName}/role`] = `盗まれた(元${targetData.original_role})`;
                 updates[`players/${targetName}/team`] = 0; // 盗まれたら市民側
 
                 // 実行！
