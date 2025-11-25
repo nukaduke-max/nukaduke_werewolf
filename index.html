@@ -12,14 +12,13 @@
         .hidden { display: none; }
         .setting-row { margin: 5px 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
         
-        /* プレイヤーリストの装飾 */
         #player-list li {
             padding: 8px; border-bottom: 1px solid #eee; text-align: left;
             display: flex; justify-content: space-between;
         }
         .status-badge { font-size: 0.8em; padding: 2px 6px; border-radius: 4px; }
-        .status-lobby { background: #e8f5e9; color: #2e7d32; font-weight: bold; } /* ロビーにいる */
-        .status-away { background: #fff3e0; color: #ef6c00; } /* 結果確認中 */
+        .status-lobby { background: #e8f5e9; color: #2e7d32; font-weight: bold; }
+        .status-away { background: #fff3e0; color: #ef6c00; }
     </style>
 </head>
 <body>
@@ -47,6 +46,7 @@
             <div class="setting-row">🐺人狼 <input type="number" id="role-werewolf" class="sync-setting" value="2" style="width:50px;"></div>
             <div class="setting-row">🔮占い <input type="number" id="role-seer" class="sync-setting" value="1" style="width:50px;"></div>
             <div class="setting-row">🐱怪盗 <input type="number" id="role-thief" class="sync-setting" value="1" style="width:50px;"></div>
+            <div class="setting-row">👻吊り人 <input type="number" id="role-tanner" class="sync-setting" value="0" style="width:50px;"></div>
             <div class="setting-row">👱村人 <input type="number" id="role-villager" class="sync-setting" value="0" style="width:50px;"></div>
             
             <p id="status-msg">準備中...</p>
@@ -60,7 +60,7 @@
 
         let myName = "";
         let currentPlayers = [];
-        let isUpdating = false; // 無限ループ防止用フラグ
+        let isUpdating = false;
 
         // --- ログイン処理 ---
         const params = new URLSearchParams(window.location.search);
@@ -91,19 +91,18 @@
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('lobby-screen').classList.remove('hidden');
 
-            // ★重要：ロビーに入ったら「私はロビーにいます(location: lobby)」と宣言する
             const userRef = ref(db, `rooms/${ROOM_ID}/players/${myName}`);
             update(userRef, { 
                 status: "online", 
                 role: "undecided",
-                location: "lobby" // ←追加！ここを見て「戻ってきたか」を判断します
+                location: "lobby"
             });
             
             setupLobby();
         }
 
         function setupLobby() {
-            // 1. プレイヤー一覧の監視
+            // プレイヤー一覧
             onValue(ref(db, `rooms/${ROOM_ID}/players`), (snap) => {
                 const data = snap.val() || {};
                 currentPlayers = Object.keys(data);
@@ -116,7 +115,6 @@
                     const pData = data[p];
                     const li = document.createElement('li');
                     
-                    // ロビーにいるかどうかの判定
                     const isLobby = pData.location === "lobby";
                     const statusText = isLobby ? "🏠 準備OK" : "👁️ 確認中...";
                     const statusClass = isLobby ? "status-lobby" : "status-away";
@@ -131,22 +129,23 @@
                 checkReady();
             });
 
-            // 2. 設定（settings）の監視（リアルタイム同期）
+            // 設定同期
             onValue(ref(db, `rooms/${ROOM_ID}/settings`), (snap) => {
                 const s = snap.val();
                 if (s) {
-                    isUpdating = true; // 自分が書き換えた時のイベント発火を防ぐ
+                    isUpdating = true;
                     if(s.time !== undefined) document.getElementById('conf-time').value = s.time;
                     if(s.werewolf !== undefined) document.getElementById('role-werewolf').value = s.werewolf;
                     if(s.seer !== undefined) document.getElementById('role-seer').value = s.seer;
                     if(s.thief !== undefined) document.getElementById('role-thief').value = s.thief;
+                    if(s.tanner !== undefined) document.getElementById('role-tanner').value = s.tanner; // ★追加
                     if(s.villager !== undefined) document.getElementById('role-villager').value = s.villager;
                     isUpdating = false;
-                    checkReady(); // 値が変わったので再計算
+                    checkReady();
                 }
             });
 
-            // 3. ゲーム開始監視
+            // ゲーム開始監視
             onValue(ref(db, `rooms/${ROOM_ID}/status`), (snap) => {
                 if (snap.val() === 'playing') {
                     const myRoleRef = ref(db, `rooms/${ROOM_ID}/players/${myName}/role`);
@@ -160,26 +159,23 @@
             });
         }
 
-        // --- 設定変更を送信する機能 ---
-        // クラス 'sync-setting' がついている入力欄すべてにイベントを設定
+        // 設定変更送信
         const settingInputs = document.querySelectorAll('.sync-setting');
         settingInputs.forEach(input => {
-            // 値を変えたらFirebaseに送る
             input.addEventListener('change', () => {
-                if(isUpdating) return; // サーバーからの反映中は送信しない
+                if(isUpdating) return;
 
                 const settings = {
                     time: parseInt(document.getElementById('conf-time').value) || 180,
                     werewolf: parseInt(document.getElementById('role-werewolf').value) || 0,
                     seer: parseInt(document.getElementById('role-seer').value) || 0,
                     thief: parseInt(document.getElementById('role-thief').value) || 0,
+                    tanner: parseInt(document.getElementById('role-tanner').value) || 0, // ★追加
                     villager: parseInt(document.getElementById('role-villager').value) || 0
                 };
 
-                // Firebaseの settings ノードを更新
                 update(ref(db, `rooms/${ROOM_ID}/settings`), settings);
-                
-                checkReady(); // 自分の画面もチェック
+                checkReady();
             });
         });
 
@@ -188,8 +184,9 @@
             const w = parseInt(document.getElementById('role-werewolf').value) || 0;
             const s = parseInt(document.getElementById('role-seer').value) || 0;
             const t = parseInt(document.getElementById('role-thief').value) || 0;
+            const tan = parseInt(document.getElementById('role-tanner').value) || 0; // ★追加
             const v = parseInt(document.getElementById('role-villager').value) || 0;
-            const total = w + s + t + v;
+            const total = w + s + t + tan + v;
             
             const btn = document.getElementById('start-btn');
             if (currentPlayers.length > 0 && total === currentPlayers.length + 2) {
@@ -204,13 +201,13 @@
         }
 
         document.getElementById('start-btn').addEventListener('click', () => {
-            // 現在の画面の設定値を取得
             const gameTime = parseInt(document.getElementById('conf-time').value) || 180;
             
             let deck = [];
             deck = deck.concat(Array(parseInt(document.getElementById('role-werewolf').value)).fill('人狼'));
             deck = deck.concat(Array(parseInt(document.getElementById('role-seer').value)).fill('占い師'));
             deck = deck.concat(Array(parseInt(document.getElementById('role-thief').value)).fill('怪盗'));
+            deck = deck.concat(Array(parseInt(document.getElementById('role-tanner').value)).fill('吊り人')); // ★追加
             deck = deck.concat(Array(parseInt(document.getElementById('role-villager').value)).fill('村人'));
 
             for (let i = deck.length - 1; i > 0; i--) {
@@ -221,14 +218,18 @@
             const updates = {};
             currentPlayers.forEach((player, index) => {
                 const roleName = deck[index];
+                
+                // ★陣営設定（0:村人, 1:人狼, 2:吊り人）
                 let teamId = 0;
                 if (roleName === '人狼') teamId = 1;
+                if (roleName === '吊り人') teamId = 2; // ★ここでチームIDを設定
+
                 updates[`players/${player}/role`] = roleName;
                 updates[`players/${player}/original_role`] = roleName;
                 updates[`players/${player}/team`] = teamId;
                 updates[`players/${player}/actDone`] = null; 
                 updates[`players/${player}/seenResult`] = null;
-                updates[`players/${player}/location`] = "game"; // ゲーム中は全員 "game" にする
+                updates[`players/${player}/location`] = "game";
             });
 
             updates[`centerCards`] = [deck[deck.length-2], deck[deck.length-1]];
