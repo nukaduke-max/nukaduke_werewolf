@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ゲーム画面</title>
+    <style>body{text-align:center; padding:20px; font-family:sans-serif;}</style>
+</head>
+<body>
+    <h1>🎮 ゲーム開始！</h1>
+    <h2 id="welcome-msg"></h2>
+    <p>あなたの役職を確認しています...</p>
+    <h1 id="my-role" style="font-size:3em; color:red;">???</h1>
+
+    <script type="module">
+        import { db, ref, get, ROOM_ID } from './config.js';
+
+        // URLから自分の名前を取り出す
+        const params = new URLSearchParams(window.location.search);
+        const myName = params.get('name');
+
+        document.getElementById('welcome-msg').textContent = `${myName}さん、ようこそ`;
+
+        if(myName) {
+            // Firebaseから自分の役職を見に行く
+            get(ref(db, `rooms/${ROOM_ID}/players/${myName}/role`)).then((snap) => {
+                const role = snap.val();
+                document.getElementById('my-role').textContent = role;
+            });
+        }
+    </script>
+</body>
+</html>
