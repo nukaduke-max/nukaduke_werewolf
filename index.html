@@ -3,263 +3,139 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ワンナイト人狼（ロビー機能付き）</title>
+    <title>ワンナイト人狼（ロビー）</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 10px; background-color: #f4f4f4; color: #333; }
+        body { font-family: sans-serif; text-align: center; padding: 10px; background-color: #f4f4f4; }
         .container { max-width: 600px; margin: 0 auto; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        
-        /* 共通パーツ */
-        input, button, select { font-size: 16px; padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
-        button { background-color: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 5px; font-weight: bold; }
-        button.secondary { background-color: #777; }
-        button.danger { background-color: #ff4444; margin-top: 20px; }
+        input, button { font-size: 16px; padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+        button { background-color: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 5px; }
         .hidden { display: none; }
-        
-        /* エリアごとのスタイル */
-        .section { border: 1px solid #ddd; padding: 10px; margin-bottom: 15px; border-radius: 5px; background: #fafafa; }
-        .section h3 { margin-top: 0; font-size: 1.1em; border-bottom: 2px solid #ddd; padding-bottom: 5px; }
-
-        /* チャット */
-        #chat-history { height: 150px; overflow-y: scroll; border: 1px solid #ccc; background: #fff; text-align: left; padding: 10px; margin-bottom: 10px; font-size: 14px; }
-        .chat-msg { margin-bottom: 4px; border-bottom: 1px dotted #eee; }
-        .chat-name { font-weight: bold; color: #555; }
-
-        /* 設定エリア */
-        .setting-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
-        .setting-row label { flex: 1; text-align: left; }
-        .setting-row input { width: 60px; text-align: center; }
-        .total-check { font-weight: bold; color: blue; }
-        .total-check.error { color: red; }
-
-        /* プレイヤーリスト */
-        #player-list { list-style: none; padding: 0; }
-        #player-list li { background: #e8f5e9; margin: 3px 0; padding: 8px; border-radius: 4px; font-size: 14px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🐺 ワンナイト人狼</h1>
+        <h1>🐺 ロビー</h1>
 
         <div id="login-screen">
-            <p>名前と合言葉を入れてね</p>
             <input type="text" id="username" placeholder="名前 (例: ポチ)">
             <input type="password" id="password" placeholder="合言葉">
-            <button id="login-btn">入室する</button>
-            <p id="error-msg" style="color:red;"></p>
+            <button id="login-btn">入室</button>
         </div>
 
         <div id="lobby-screen" class="hidden">
-            <div class="section">
-                <h3>👥 参加者 (<span id="player-count">0</span>人)</h3>
-                <ul id="player-list"></ul>
-            </div>
-
-            <div class="section">
-                <h3>💬 チャット</h3>
-                <div id="chat-history"></div>
-                <div style="display:flex; gap:5px;">
-                    <input type="text" id="chat-input" placeholder="メッセージ..." style="flex:1;">
-                    <button id="chat-send" style="width:60px;">送信</button>
-                </div>
-            </div>
-
-            <div class="section">
-                <h3>⚙️ ゲーム設定</h3>
-                <div class="setting-row">
-                    <label>⏱ 議論時間 (秒)</label>
-                    <input type="number" id="conf-time" value="180">
-                </div>
-                <hr>
-                <p style="font-size:0.9em; margin:5px 0;">役職の数 (合計: <span id="role-total">0</span>)</p>
-                <div class="setting-row"><label>🐺 人狼</label><input type="number" class="role-input" id="role-werewolf" data-role="werewolf" value="2"></div>
-                <div class="setting-row"><label>🔮 占い師</label><input type="number" class="role-input" id="role-seer" data-role="seer" value="1"></div>
-                <div class="setting-row"><label>🐱 怪盗</label><input type="number" class="role-input" id="role-thief" data-role="thief" value="1"></div>
-                <div class="setting-row"><label>👱 村人</label><input type="number" class="role-input" id="role-villager" data-role="villager" value="0"></div>
-                
-                <p id="match-status" class="total-check">設定待ち...</p>
-            </div>
-
-            <button id="start-game-btn" class="secondary" disabled>ゲーム開始 (準備中)</button>
+            <p>参加者: <span id="player-count">0</span>人</p>
+            <ul id="player-list" style="text-align:left;"></ul>
+            <hr>
+            <h3>ゲーム設定</h3>
+            <div>🐺人狼 <input type="number" id="role-werewolf" value="2" style="width:50px;"></div>
+            <div>🔮占い <input type="number" id="role-seer" value="1" style="width:50px;"></div>
+            <div>🐱怪盗 <input type="number" id="role-thief" value="1" style="width:50px;"></div>
+            <div>👱村人 <input type="number" id="role-villager" value="0" style="width:50px;"></div>
+            <p id="status-msg">準備中...</p>
             
-            <button id="reset-btn" class="danger">解散・リセット</button>
+            <button id="start-btn" disabled>ゲーム開始！</button>
         </div>
     </div>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-        import { getDatabase, ref, set, update, onValue, push, onChildAdded, remove, onDisconnect } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
+        // ★さっき作ったconfig.jsから機能を読み込む（便利！）
+        import { db, ref, set, update, onValue, remove, onDisconnect, ROOM_ID, PASSWORD } from './config.js';
 
-        // ★設定: パスワード書き換え
-        const PASSWORD = "1234";
-        const ROOM_ID = "my_private_room";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyCZZlMXREYtPTFXMTrjtATsa1xShWmZIZI",
-            authDomain: "werewolf-756e4.firebaseapp.com",
-            databaseURL: "https://werewolf-756e4-default-rtdb.asia-southeast1.firebasedatabase.app",
-            projectId: "werewolf-756e4",
-            storageBucket: "werewolf-756e4.firebasestorage.app",
-            messagingSenderId: "935198400486",
-            appId: "1:935198400486:web:4ad43bbc49adac97a6c027",
-            measurementId: "G-Q7LBVYBN3Z"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
-
-        // 変数
         let myName = "";
-        let currentPlayers = 0;
+        let currentPlayers = [];
 
-        // --- ログイン処理 ---
+        // ログイン
         document.getElementById('login-btn').addEventListener('click', () => {
             const name = document.getElementById('username').value.trim();
-            const pass = document.getElementById('password').value;
-            if (!name) return alert("名前を入れてね");
-            if (pass !== PASSWORD) return alert("パスワードが違います");
+            if (document.getElementById('password').value !== PASSWORD) return alert("パスワードが違います");
+            if (!name) return;
 
             myName = name;
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('lobby-screen').classList.remove('hidden');
-            
-            joinRoom();
-        });
 
-        function joinRoom() {
             // 参加登録
-            const myRef = ref(db, `rooms/${ROOM_ID}/players/${myName}`);
-            set(myRef, { status: "online", role: "undecided" });
-            onDisconnect(myRef).remove();
+            const userRef = ref(db, `rooms/${ROOM_ID}/players/${myName}`);
+            set(userRef, { status: "online", role: "undecided" });
+            onDisconnect(userRef).remove();
 
-            setupListeners();
-        }
+            setupLobby();
+        });
 
-        // --- データ監視 (リスナー) ---
-        function setupListeners() {
-            // 1. プレイヤー一覧監視
+        function setupLobby() {
+            // 1. プレイヤー監視
             onValue(ref(db, `rooms/${ROOM_ID}/players`), (snap) => {
-                const list = document.getElementById('player-list');
-                list.innerHTML = "";
                 const data = snap.val() || {};
-                currentPlayers = Object.keys(data).length;
-                document.getElementById('player-count').textContent = currentPlayers;
-
-                Object.keys(data).forEach(name => {
-                    const li = document.createElement('li');
-                    li.textContent = name + (name === myName ? " (自分)" : "");
-                    list.appendChild(li);
-                });
-                checkGameReady(); // 人数チェック
+                currentPlayers = Object.keys(data);
+                document.getElementById('player-count').textContent = currentPlayers.length;
+                
+                const list = document.getElementById('player-list');
+                list.innerHTML = currentPlayers.map(p => `<li>${p}</li>`).join('');
+                
+                checkReady();
             });
 
-            // 2. 設定監視 (誰かが設定を変えたら画面に反映)
-            onValue(ref(db, `rooms/${ROOM_ID}/settings`), (snap) => {
-                const val = snap.val();
-                if (val) {
-                    if(val.time) document.getElementById('conf-time').value = val.time;
-                    if(val.roles) {
-                        document.getElementById('role-werewolf').value = val.roles.werewolf || 0;
-                        document.getElementById('role-seer').value = val.roles.seer || 0;
-                        document.getElementById('role-thief').value = val.roles.thief || 0;
-                        document.getElementById('role-villager').value = val.roles.villager || 0;
-                    }
+            // 2. ゲーム開始監視（★ここがポイント）
+            // 管理者が開始ボタンを押すと status が 'playing' になります。
+            // すると、参加者全員が自動的に game.html に飛ばされます。
+            onValue(ref(db, `rooms/${ROOM_ID}/status`), (snap) => {
+                if (snap.val() === 'playing') {
+                    // 名前を持って次のページへ移動
+                    window.location.href = `game.html?name=${encodeURIComponent(myName)}`;
                 }
-                checkGameReady();
-            });
-
-            // 3. チャット受信
-            onChildAdded(ref(db, `rooms/${ROOM_ID}/chat`), (snap) => {
-                const msg = snap.val();
-                const div = document.createElement('div');
-                div.className = "chat-msg";
-                div.innerHTML = `<span class="chat-name">${msg.name}:</span> ${msg.text}`;
-                const history = document.getElementById('chat-history');
-                history.appendChild(div);
-                history.scrollTop = history.scrollHeight; // 自動スクロール
             });
         }
 
-        // --- 設定変更の送信 ---
-        // 数字を変えたらすぐにデータベースを更新する
-        const settingsInputs = document.querySelectorAll('.role-input, #conf-time');
-        settingsInputs.forEach(input => {
-            input.addEventListener('change', () => {
-                const settings = {
-                    time: parseInt(document.getElementById('conf-time').value),
-                    roles: {
-                        werewolf: parseInt(document.getElementById('role-werewolf').value),
-                        seer: parseInt(document.getElementById('role-seer').value),
-                        thief: parseInt(document.getElementById('role-thief').value),
-                        villager: parseInt(document.getElementById('role-villager').value)
-                    }
-                };
-                update(ref(db, `rooms/${ROOM_ID}/settings`), settings);
-            });
-        });
-
-        // --- チャット送信 ---
-        document.getElementById('chat-send').addEventListener('click', sendChat);
-        // エンターキーでも送信
-        document.getElementById('chat-input').addEventListener('keypress', (e) => {
-             if (e.key === 'Enter') sendChat(); 
-        });
-
-        function sendChat() {
-            const input = document.getElementById('chat-input');
-            const text = input.value.trim();
-            if (!text) return;
-            push(ref(db, `rooms/${ROOM_ID}/chat`), {
-                name: myName,
-                text: text,
-                timestamp: Date.now()
-            });
-            input.value = "";
-        }
-
-        // --- 人数と役職数のチェック ---
-        function checkGameReady() {
-            // ワンナイト人狼は「プレイヤー人数 + 2枚」のカードが必要
-            const w = parseInt(document.getElementById('role-werewolf').value) || 0;
-            const s = parseInt(document.getElementById('role-seer').value) || 0;
-            const t = parseInt(document.getElementById('role-thief').value) || 0;
-            const v = parseInt(document.getElementById('role-villager').value) || 0;
+        // 準備OKかチェック
+        function checkReady() {
+            const w = parseInt(document.getElementById('role-werewolf').value);
+            const s = parseInt(document.getElementById('role-seer').value);
+            const t = parseInt(document.getElementById('role-thief').value);
+            const v = parseInt(document.getElementById('role-villager').value);
+            const total = w + s + t + v;
             
-            const totalCards = w + s + t + v;
-            document.getElementById('role-total').textContent = totalCards;
-
-            const statusText = document.getElementById('match-status');
-            const startBtn = document.getElementById('start-game-btn');
-
-            // 必要なカード枚数は、通常は参加人数+2枚（場に2枚余る）
-            const needed = currentPlayers + 2;
-
-            if (currentPlayers === 0) {
-                statusText.textContent = "参加者待ち...";
-                statusText.className = "total-check";
-                startBtn.disabled = true;
-            } else if (totalCards === needed) {
-                statusText.textContent = `OK! (参加者${currentPlayers}人 + 余り2枚)`;
-                statusText.className = "total-check";
-                startBtn.disabled = false;
-                startBtn.textContent = "ゲーム開始！";
-                startBtn.style.backgroundColor = "#ff9800"; // 色を変えて目立たせる
+            const btn = document.getElementById('start-btn');
+            // 人数 + 2枚のカードが必要
+            if (currentPlayers.length > 0 && total === currentPlayers.length + 2) {
+                document.getElementById('status-msg').textContent = "準備OK!";
+                btn.disabled = false;
+                btn.style.backgroundColor = "#ff9800";
             } else {
-                statusText.textContent = `カードが合いません (現在${totalCards}枚 / 必要${needed}枚)`;
-                statusText.className = "total-check error";
-                startBtn.disabled = true;
-                startBtn.textContent = "設定調整中...";
-                startBtn.style.backgroundColor = "#777";
+                document.getElementById('status-msg').textContent = `カード枚数が合いません (現在${total}枚 / 必要${currentPlayers.length+2}枚)`;
+                btn.disabled = true;
+                btn.style.backgroundColor = "#ccc";
             }
         }
 
-        // 解散
-        document.getElementById('reset-btn').addEventListener('click', () => {
-            if(confirm("全員退出させてリセットしますか？")) {
-                remove(ref(db, `rooms/${ROOM_ID}`));
-                location.reload();
+        // ゲーム開始ボタン（ここですごい処理をします）
+        document.getElementById('start-btn').addEventListener('click', () => {
+            // 1. 役職カードの山を作る
+            let deck = [];
+            deck = deck.concat(Array(parseInt(document.getElementById('role-werewolf').value)).fill('人狼'));
+            deck = deck.concat(Array(parseInt(document.getElementById('role-seer').value)).fill('占い師'));
+            deck = deck.concat(Array(parseInt(document.getElementById('role-thief').value)).fill('怪盗'));
+            deck = deck.concat(Array(parseInt(document.getElementById('role-villager').value)).fill('村人'));
+
+            // 2. シャッフル（ランダムに混ぜる）
+            for (let i = deck.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [deck[i], deck[j]] = [deck[j], deck[i]];
             }
+
+            // 3. プレイヤーに配る
+            const updates = {};
+            currentPlayers.forEach((player, index) => {
+                updates[`players/${player}/role`] = deck[index];
+            });
+
+            // 4. 余った2枚を「中央のカード」として保存
+            updates[`centerCards`] = [deck[deck.length-2], deck[deck.length-1]];
+            
+            // 5. ステータスを「プレイ中」に変更（これで全員ジャンプ！）
+            updates[`status`] = "playing";
+
+            update(ref(db, `rooms/${ROOM_ID}`), updates);
         });
-        
     </script>
 </body>
 </html>
