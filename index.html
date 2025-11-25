@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ワンナイト人狼（ロビー）</title>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 10px; background-color: #f4f4f4; }
@@ -15,7 +15,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>🐺 ロビー (v3)</h1>
+        <h1>🐺 ロビー</h1>
 
         <div id="login-screen">
             <input type="text" id="username" placeholder="名前 (例: ポチ)">
@@ -47,30 +47,46 @@
     </div>
 
     <script type="module">
-        import { db, ref, set, update, onValue, get, remove, onDisconnect, ROOM_ID, PASSWORD } from './config.js';
+        import { db, ref, set, update, onValue, get, ROOM_ID, PASSWORD } from './config.js';
 
         let myName = "";
         let currentPlayers = [];
 
-        // ログイン
+        // --- 1. 自動ログイン or 手動ログイン判定 ---
+        const params = new URLSearchParams(window.location.search);
+        const autoLogin = params.get('auto');
+        const urlName = params.get('name');
+
+        if (autoLogin && urlName) {
+            // 自動ログイン
+            myName = urlName;
+            document.getElementById('username').value = myName; // 見た目用
+            startLobbyLogic();
+        }
+
+        // 手動ログインボタン
         document.getElementById('login-btn').addEventListener('click', () => {
             const name = document.getElementById('username').value.trim();
             if (document.getElementById('password').value !== PASSWORD) return alert("パスワードが違います");
             if (!name) return;
 
             myName = name;
+            startLobbyLogic();
+        });
+
+        function startLobbyLogic() {
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('lobby-screen').classList.remove('hidden');
 
-            // 参加登録
+            // 参加登録 (毎回上書きしてOK)
             const userRef = ref(db, `rooms/${ROOM_ID}/players/${myName}`);
-            set(userRef, { status: "online", role: "undecided" });
+            update(userRef, { status: "online", role: "undecided" });
             
             setupLobby();
-        });
+        }
 
         function setupLobby() {
-            // 1. プレイヤー監視
+            // プレイヤー監視
             onValue(ref(db, `rooms/${ROOM_ID}/players`), (snap) => {
                 const data = snap.val() || {};
                 currentPlayers = Object.keys(data);
@@ -82,24 +98,21 @@
                 checkReady();
             });
 
-            // 2. ゲーム開始監視（★修正済みの安全版）
+            // ゲーム開始監視
             onValue(ref(db, `rooms/${ROOM_ID}/status`), (snap) => {
                 if (snap.val() === 'playing') {
-                    // ★安全策: 自分の役職が決まっているか確認してから飛ぶ
+                    // 安全策: 役職が決まっているか確認してから飛ぶ
                     const myRoleRef = ref(db, `rooms/${ROOM_ID}/players/${myName}/role`);
                     get(myRoleRef).then((roleSnap) => {
                         const r = roleSnap.val();
                         if (r && r !== "undecided") {
                             window.location.href = `game.html?name=${encodeURIComponent(myName)}`;
-                        } else {
-                            console.log("前のゲームのステータスが残っています。開始ボタンが押されるまで待ちます。");
                         }
                     });
                 }
             });
         }
 
-        // 準備OKかチェック
         function checkReady() {
             const w = parseInt(document.getElementById('role-werewolf').value) || 0;
             const s = parseInt(document.getElementById('role-seer').value) || 0;
@@ -119,46 +132,36 @@
             }
         }
 
-        // ゲーム開始ボタンの処理
         document.getElementById('start-btn').addEventListener('click', () => {
-            // 1. 設定値の取得
             const gameTime = parseInt(document.getElementById('conf-time').value) || 180;
-
-            // 2. デッキ作成
             let deck = [];
             deck = deck.concat(Array(parseInt(document.getElementById('role-werewolf').value)).fill('人狼'));
             deck = deck.concat(Array(parseInt(document.getElementById('role-seer').value)).fill('占い師'));
             deck = deck.concat(Array(parseInt(document.getElementById('role-thief').value)).fill('怪盗'));
             deck = deck.concat(Array(parseInt(document.getElementById('role-villager').value)).fill('村人'));
 
-            // 3. シャッフル
             for (let i = deck.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [deck[i], deck[j]] = [deck[j], deck[i]];
             }
 
-            // 4. 配布データの作成
             const updates = {};
             currentPlayers.forEach((player, index) => {
                 const roleName = deck[index];
-                
-                // 陣営判定（0:村人側, 1:人狼側）
                 let teamId = 0;
                 if (roleName === '人狼') teamId = 1;
-
                 updates[`players/${player}/role`] = roleName;
                 updates[`players/${player}/original_role`] = roleName;
                 updates[`players/${player}/team`] = teamId;
+                // フラグのリセット
+                updates[`players/${player}/actDone`] = null; 
+                updates[`players/${player}/seenResult`] = null;
             });
 
-            // 中央カード
             updates[`centerCards`] = [deck[deck.length-2], deck[deck.length-1]];
-            
-            // ★時間を保存
             updates[`gameTime`] = gameTime;
-
-            // ステータス変更
-            updates[`status`] = "playing";
+            updates[`votes`] = null; // 投票リセット
+            updates[`status`] = "playing"; // 開始
 
             update(ref(db, `rooms/${ROOM_ID}`), updates);
         });
