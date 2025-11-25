@@ -11,6 +11,15 @@
         button { background-color: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 5px; }
         .hidden { display: none; }
         .setting-row { margin: 5px 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
+        
+        /* プレイヤーリストの装飾 */
+        #player-list li {
+            padding: 8px; border-bottom: 1px solid #eee; text-align: left;
+            display: flex; justify-content: space-between;
+        }
+        .status-badge { font-size: 0.8em; padding: 2px 6px; border-radius: 4px; }
+        .status-lobby { background: #e8f5e9; color: #2e7d32; font-weight: bold; } /* ロビーにいる */
+        .status-away { background: #fff3e0; color: #ef6c00; } /* 結果確認中 */
     </style>
 </head>
 <body>
@@ -25,20 +34,20 @@
 
         <div id="lobby-screen" class="hidden">
             <p>参加者: <span id="player-count">0</span>人</p>
-            <ul id="player-list" style="text-align:left;"></ul>
+            <ul id="player-list"></ul>
             <hr>
             <h3>ゲーム設定</h3>
             
             <div class="setting-row">
                 <label>⏱ 議論時間 (秒)</label>
-                <input type="number" id="conf-time" value="180" style="width:80px;">
+                <input type="number" id="conf-time" class="sync-setting" value="180" style="width:80px;">
             </div>
 
             <hr>
-            <div class="setting-row">🐺人狼 <input type="number" id="role-werewolf" value="2" style="width:50px;"></div>
-            <div class="setting-row">🔮占い <input type="number" id="role-seer" value="1" style="width:50px;"></div>
-            <div class="setting-row">🐱怪盗 <input type="number" id="role-thief" value="1" style="width:50px;"></div>
-            <div class="setting-row">👱村人 <input type="number" id="role-villager" value="0" style="width:50px;"></div>
+            <div class="setting-row">🐺人狼 <input type="number" id="role-werewolf" class="sync-setting" value="2" style="width:50px;"></div>
+            <div class="setting-row">🔮占い <input type="number" id="role-seer" class="sync-setting" value="1" style="width:50px;"></div>
+            <div class="setting-row">🐱怪盗 <input type="number" id="role-thief" class="sync-setting" value="1" style="width:50px;"></div>
+            <div class="setting-row">👱村人 <input type="number" id="role-villager" class="sync-setting" value="0" style="width:50px;"></div>
             
             <p id="status-msg">準備中...</p>
             
@@ -51,11 +60,9 @@
 
         let myName = "";
         let currentPlayers = [];
+        let isUpdating = false; // 無限ループ防止用フラグ
 
-        // ★追加: 設定を復元する
-        loadSettings();
-
-        // --- 1. 自動ログイン or 手動ログイン判定 ---
+        // --- ログイン処理 ---
         const params = new URLSearchParams(window.location.search);
         const autoLogin = params.get('auto');
         const urlName = params.get('name');
@@ -72,12 +79,10 @@
             if (!name) return;
 
             myName = name;
-            // ログイン時にも名前だけ保存しておくと便利
             localStorage.setItem('werewolf_username', myName);
             startLobbyLogic();
         });
 
-        // 保存された名前があれば入れておく
         const savedName = localStorage.getItem('werewolf_username');
         if (savedName) document.getElementById('username').value = savedName;
 
@@ -86,24 +91,62 @@
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('lobby-screen').classList.remove('hidden');
 
+            // ★重要：ロビーに入ったら「私はロビーにいます(location: lobby)」と宣言する
             const userRef = ref(db, `rooms/${ROOM_ID}/players/${myName}`);
-            update(userRef, { status: "online", role: "undecided" });
+            update(userRef, { 
+                status: "online", 
+                role: "undecided",
+                location: "lobby" // ←追加！ここを見て「戻ってきたか」を判断します
+            });
             
             setupLobby();
         }
 
         function setupLobby() {
+            // 1. プレイヤー一覧の監視
             onValue(ref(db, `rooms/${ROOM_ID}/players`), (snap) => {
                 const data = snap.val() || {};
                 currentPlayers = Object.keys(data);
                 document.getElementById('player-count').textContent = currentPlayers.length;
                 
                 const list = document.getElementById('player-list');
-                list.innerHTML = currentPlayers.map(p => `<li>${p}</li>`).join('');
+                list.innerHTML = "";
+
+                currentPlayers.forEach(p => {
+                    const pData = data[p];
+                    const li = document.createElement('li');
+                    
+                    // ロビーにいるかどうかの判定
+                    const isLobby = pData.location === "lobby";
+                    const statusText = isLobby ? "🏠 準備OK" : "👁️ 確認中...";
+                    const statusClass = isLobby ? "status-lobby" : "status-away";
+
+                    li.innerHTML = `
+                        <span>${p}</span>
+                        <span class="status-badge ${statusClass}">${statusText}</span>
+                    `;
+                    list.appendChild(li);
+                });
                 
                 checkReady();
             });
 
+            // 2. 設定（settings）の監視（リアルタイム同期）
+            onValue(ref(db, `rooms/${ROOM_ID}/settings`), (snap) => {
+                const s = snap.val();
+                if (s) {
+                    isUpdating = true; // 自分が書き換えた時のイベント発火を防ぐ
+                    if(s.time !== undefined) document.getElementById('conf-time').value = s.time;
+                    if(s.werewolf !== undefined) document.getElementById('role-werewolf').value = s.werewolf;
+                    if(s.seer !== undefined) document.getElementById('role-seer').value = s.seer;
+                    if(s.thief !== undefined) document.getElementById('role-thief').value = s.thief;
+                    if(s.villager !== undefined) document.getElementById('role-villager').value = s.villager;
+                    isUpdating = false;
+                    checkReady(); // 値が変わったので再計算
+                }
+            });
+
+            // 3. ゲーム開始監視
             onValue(ref(db, `rooms/${ROOM_ID}/status`), (snap) => {
                 if (snap.val() === 'playing') {
                     const myRoleRef = ref(db, `rooms/${ROOM_ID}/players/${myName}/role`);
@@ -117,11 +160,29 @@
             });
         }
 
-        // 入力値が変わったらすぐにチェック（＆保存したい場合はここでもsaveSettingsを呼べる）
-        const inputs = document.querySelectorAll('input[type="number"]');
-        inputs.forEach(input => {
-            input.addEventListener('change', checkReady);
+        // --- 設定変更を送信する機能 ---
+        // クラス 'sync-setting' がついている入力欄すべてにイベントを設定
+        const settingInputs = document.querySelectorAll('.sync-setting');
+        settingInputs.forEach(input => {
+            // 値を変えたらFirebaseに送る
+            input.addEventListener('change', () => {
+                if(isUpdating) return; // サーバーからの反映中は送信しない
+
+                const settings = {
+                    time: parseInt(document.getElementById('conf-time').value) || 180,
+                    werewolf: parseInt(document.getElementById('role-werewolf').value) || 0,
+                    seer: parseInt(document.getElementById('role-seer').value) || 0,
+                    thief: parseInt(document.getElementById('role-thief').value) || 0,
+                    villager: parseInt(document.getElementById('role-villager').value) || 0
+                };
+
+                // Firebaseの settings ノードを更新
+                update(ref(db, `rooms/${ROOM_ID}/settings`), settings);
+                
+                checkReady(); // 自分の画面もチェック
+            });
         });
+
 
         function checkReady() {
             const w = parseInt(document.getElementById('role-werewolf').value) || 0;
@@ -143,10 +204,9 @@
         }
 
         document.getElementById('start-btn').addEventListener('click', () => {
-            // ★追加: ゲーム開始時に設定を保存する
-            saveSettings();
-
+            // 現在の画面の設定値を取得
             const gameTime = parseInt(document.getElementById('conf-time').value) || 180;
+            
             let deck = [];
             deck = deck.concat(Array(parseInt(document.getElementById('role-werewolf').value)).fill('人狼'));
             deck = deck.concat(Array(parseInt(document.getElementById('role-seer').value)).fill('占い師'));
@@ -168,6 +228,7 @@
                 updates[`players/${player}/team`] = teamId;
                 updates[`players/${player}/actDone`] = null; 
                 updates[`players/${player}/seenResult`] = null;
+                updates[`players/${player}/location`] = "game"; // ゲーム中は全員 "game" にする
             });
 
             updates[`centerCards`] = [deck[deck.length-2], deck[deck.length-1]];
@@ -177,34 +238,6 @@
 
             update(ref(db, `rooms/${ROOM_ID}`), updates);
         });
-
-        // --- ★設定保存・読込ロジック ---
-        function saveSettings() {
-            const settings = {
-                time: document.getElementById('conf-time').value,
-                werewolf: document.getElementById('role-werewolf').value,
-                seer: document.getElementById('role-seer').value,
-                thief: document.getElementById('role-thief').value,
-                villager: document.getElementById('role-villager').value
-            };
-            localStorage.setItem('werewolf_settings', JSON.stringify(settings));
-        }
-
-        function loadSettings() {
-            const saved = localStorage.getItem('werewolf_settings');
-            if (saved) {
-                try {
-                    const s = JSON.parse(saved);
-                    if(s.time) document.getElementById('conf-time').value = s.time;
-                    if(s.werewolf) document.getElementById('role-werewolf').value = s.werewolf;
-                    if(s.seer) document.getElementById('role-seer').value = s.seer;
-                    if(s.thief) document.getElementById('role-thief').value = s.thief;
-                    if(s.villager) document.getElementById('role-villager').value = s.villager;
-                } catch(e) {
-                    console.error("設定読み込みエラー", e);
-                }
-            }
-        }
     </script>
 </body>
 </html>
