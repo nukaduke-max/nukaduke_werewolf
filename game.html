@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ゲーム中</title>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 10px; background-color: #222; color: white; }
@@ -27,7 +27,11 @@
         #chat-history { height: 200px; overflow-y: scroll; border-bottom: 1px solid #ccc; margin-bottom: 10px; }
         .chat-msg { margin-bottom: 4px; border-bottom: 1px dotted #ccc; font-size: 14px; }
         .chat-name { font-weight: bold; color: #444; }
+        
+        /* ★修正: 入力欄のズーム防止のためフォントサイズを16px確保 */
         .chat-input-row { display: flex; gap: 5px; }
+        #chat-input { flex: 1; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
+        #chat-send { width: 70px; margin: 0; }
     </style>
 </head>
 <body>
@@ -49,8 +53,7 @@
             <div id="wait-area" class="area-box">
                 <p id="wait-msg">アクションが終わったらボタンを押してください</p>
                 <button id="finish-btn" class="finish-btn">確認・行動完了</button>
-                <p id="ready-count" style="color:yellow; margin-top:10px;">待機中...</p>
-            </div>
+                </div>
         </div>
 
         <div id="discussion-phase" class="hidden">
@@ -60,8 +63,8 @@
             <div id="chat-area">
                 <div id="chat-history"></div>
                 <div class="chat-input-row">
-                    <input type="text" id="chat-input" placeholder="メッセージ..." style="flex:1; padding:8px;">
-                    <button id="chat-send" style="width:60px; margin:0;">送信</button>
+                    <input type="text" id="chat-input" placeholder="メッセージ...">
+                    <button id="chat-send">送信</button>
                 </div>
             </div>
         </div>
@@ -97,7 +100,7 @@
             }
         });
 
-        // ★修正点: 部屋全体の監視（より強力な同期）
+        // 部屋全体の監視
         onValue(ref(db, `rooms/${ROOM_ID}`), (snap) => {
             const roomData = snap.val();
             if (!roomData) return;
@@ -109,11 +112,10 @@
                 const total = playerList.length;
                 const doneCount = playerList.filter(p => p.actDone).length;
                 
-                document.getElementById('ready-count').textContent = `準備完了: ${doneCount} / ${total} 人`;
+                // ★修正: 人数表示の行を削除しました
+                // document.getElementById('ready-count').textContent = ... 
 
-                // ★ここが修正ポイント
-                // 「全員終わってる」かつ「まだ議論時間(endTime)が設定されていない」なら、
-                // 気づいた人がサーバーのデータを更新する（これで確実に始まる）
+                // 全員完了チェック
                 if (doneCount === total && total > 0 && !roomData.endTime) {
                     const gameTime = roomData.gameTime || 180;
                     const endTime = Date.now() + (gameTime * 1000);
@@ -131,10 +133,8 @@
             }
         });
 
-        // --- チャット機能 (議論中のみ有効) ---
+        // --- チャット機能 ---
         onChildAdded(ref(db, `rooms/${ROOM_ID}/chat`), (snap) => {
-            // 議論フェーズになっていなければ表示しない制御も可能ですが、
-            // ログとして残すために表示はしておきます
             const msg = snap.val();
             const div = document.createElement('div');
             div.className = "chat-msg";
@@ -145,6 +145,11 @@
         });
 
         document.getElementById('chat-send').addEventListener('click', sendChat);
+        // エンターキーでも送信可能に
+        document.getElementById('chat-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendChat();
+        });
+
         function sendChat() {
             const input = document.getElementById('chat-input');
             const text = input.value.trim();
@@ -156,6 +161,7 @@
                 timestamp: Date.now()
             });
             input.value = "";
+            input.focus(); // 送信後も入力を続けやすくする
         }
 
 
@@ -272,7 +278,6 @@
 
             if (timerInterval) clearInterval(timerInterval);
             
-            // 0.1秒ごとに更新して滑らかに
             timerInterval = setInterval(() => {
                 const now = Date.now();
                 const remain = Math.max(0, Math.ceil((endTime - now) / 1000));
